@@ -1,6 +1,7 @@
 package com.seanick80.drawingapp.gradient;
 
 import java.awt.Color;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -96,5 +97,49 @@ public class ColorGradient {
 
     private static int clamp(int v) {
         return Math.max(0, Math.min(255, v));
+    }
+
+    /**
+     * Save gradient to a file. Format:
+     * GRADIENT
+     * position R G B
+     * ...
+     */
+    public void save(File file) throws IOException {
+        try (PrintWriter pw = new PrintWriter(new FileWriter(file))) {
+            pw.println("GRADIENT");
+            for (Stop s : getStops()) {
+                pw.printf("%.6f %d %d %d%n", s.position,
+                    s.color.getRed(), s.color.getGreen(), s.color.getBlue());
+            }
+        }
+    }
+
+    /** Load gradient from a file. Replaces all existing stops. */
+    public static ColorGradient load(File file) throws IOException {
+        ColorGradient grad = new ColorGradient();
+        grad.stops.clear();
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            String header = br.readLine();
+            if (header == null || !header.trim().equals("GRADIENT")) {
+                throw new IOException("Not a gradient file");
+            }
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                String[] parts = line.split("\\s+");
+                if (parts.length < 4) continue;
+                float pos = Float.parseFloat(parts[0]);
+                int r = Integer.parseInt(parts[1]);
+                int g = Integer.parseInt(parts[2]);
+                int b = Integer.parseInt(parts[3]);
+                grad.stops.add(new Stop(pos, new Color(clamp(r), clamp(g), clamp(b))));
+            }
+        }
+        if (grad.stops.size() < 2) {
+            throw new IOException("Gradient must have at least 2 stops");
+        }
+        return grad;
     }
 }

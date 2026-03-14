@@ -7,6 +7,7 @@ import com.seanick80.drawingapp.tools.*;
 import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
+import java.awt.event.*;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -211,31 +212,100 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         });
 
         JLabel angleLabel = new JLabel("Angle:");
-        angleLabel.setFont(angleLabel.getFont().deriveFont(11f));
+        angleLabel.setFont(angleLabel.getFont().deriveFont(Font.BOLD, 11f));
         angleLabel.setAlignmentX(LEFT_ALIGNMENT);
 
-        JSpinner angleSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 359, 15));
-        angleSpinner.setMaximumSize(new Dimension(120, 28));
-        angleSpinner.setAlignmentX(LEFT_ALIGNMENT);
-        angleSpinner.addChangeListener(e -> {
-            FillProvider fp = fillRegistry.getByName((String) fillCombo.getSelectedItem());
-            if (fp instanceof CustomGradientFill cgf) {
-                cgf.setAngleDegrees((int) angleSpinner.getValue());
-            }
-        });
+        int dialSize = 54;
+        int[] dialAngle = {0};
+        JPanel angleDial = new JPanel() {
+            {
+                setPreferredSize(new Dimension(dialSize, dialSize));
+                setMinimumSize(new Dimension(dialSize, dialSize));
+                setMaximumSize(new Dimension(dialSize, dialSize));
+                setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-        // Show/hide custom gradient controls based on fill selection
+                MouseAdapter mouse = new MouseAdapter() {
+                    @Override
+                    public void mousePressed(MouseEvent e) { updateAngle(e); }
+                    @Override
+                    public void mouseDragged(MouseEvent e) { updateAngle(e); }
+                };
+                addMouseListener(mouse);
+                addMouseMotionListener(mouse);
+            }
+
+            private void updateAngle(MouseEvent e) {
+                int cx = getWidth() / 2;
+                int cy = getHeight() / 2;
+                int dx = e.getX() - cx;
+                int dy = e.getY() - cy;
+                if (dx == 0 && dy == 0) return;
+                dialAngle[0] = (int) Math.round(Math.toDegrees(Math.atan2(dy, dx)));
+                if (dialAngle[0] < 0) dialAngle[0] += 360;
+                FillProvider fp = fillRegistry.getByName((String) fillCombo.getSelectedItem());
+                if (fp instanceof AngledFillProvider afp) {
+                    afp.setAngleDegrees(dialAngle[0]);
+                }
+                repaint();
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                int cx = getWidth() / 2;
+                int cy = getHeight() / 2;
+                int radius = Math.min(cx, cy) - 3;
+
+                g2.setColor(Color.DARK_GRAY);
+                g2.setStroke(new BasicStroke(1.5f));
+                g2.drawOval(cx - radius, cy - radius, radius * 2, radius * 2);
+
+                g2.setColor(Color.WHITE);
+                g2.fillOval(cx - radius + 1, cy - radius + 1, radius * 2 - 2, radius * 2 - 2);
+
+                double rad = Math.toRadians(dialAngle[0]);
+                int lx = cx + (int) (radius * Math.cos(rad));
+                int ly = cy + (int) (radius * Math.sin(rad));
+                g2.setColor(Color.BLACK);
+                g2.setStroke(new BasicStroke(2));
+                g2.drawLine(cx, cy, lx, ly);
+
+                g2.fillOval(cx - 3, cy - 3, 6, 6);
+
+                g2.setColor(Color.RED);
+                g2.fillOval(lx - 3, ly - 3, 6, 6);
+
+                g2.setColor(Color.DARK_GRAY);
+                g2.setFont(g2.getFont().deriveFont(9f));
+                String text = dialAngle[0] + "\u00B0";
+                FontMetrics fm = g2.getFontMetrics();
+                g2.drawString(text, cx - fm.stringWidth(text) / 2, getHeight() - 1);
+            }
+        };
+        angleDial.setAlignmentX(LEFT_ALIGNMENT);
+
+        // Show/hide controls based on fill selection
         gradientPreview.setVisible(false);
         editGradientBtn.setVisible(false);
         angleLabel.setVisible(false);
-        angleSpinner.setVisible(false);
+        angleDial.setVisible(false);
         fillCombo.addActionListener(e -> {
             String name = (String) fillCombo.getSelectedItem();
-            boolean isCustom = fillRegistry.getByName(name) instanceof CustomGradientFill;
+            FillProvider fp = fillRegistry.getByName(name);
+            boolean isCustom = fp instanceof CustomGradientFill;
+            boolean hasAngle = fp instanceof AngledFillProvider;
             gradientPreview.setVisible(isCustom);
             editGradientBtn.setVisible(isCustom);
-            angleLabel.setVisible(isCustom);
-            angleSpinner.setVisible(isCustom);
+            angleLabel.setVisible(hasAngle);
+            angleDial.setVisible(hasAngle);
+            // Sync dial to the fill's current angle
+            if (fp instanceof AngledFillProvider afp) {
+                dialAngle[0] = afp.getAngleDegrees();
+                angleDial.repaint();
+            }
         });
 
         panel.add(Box.createVerticalStrut(4));
@@ -244,7 +314,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         panel.add(editGradientBtn);
         panel.add(Box.createVerticalStrut(4));
         panel.add(angleLabel);
-        panel.add(angleSpinner);
+        panel.add(angleDial);
         return panel;
     }
 

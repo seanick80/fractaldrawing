@@ -9,7 +9,7 @@ import java.awt.image.BufferedImage;
  * Fill provider that uses a user-defined ColorGradient.
  * The gradient is applied along a configurable angle.
  */
-public class CustomGradientFill implements FillProvider {
+public class CustomGradientFill implements AngledFillProvider {
 
     private ColorGradient gradient = new ColorGradient();
     private int angleDegrees = 0; // 0=left-to-right, 90=top-to-bottom, etc.
