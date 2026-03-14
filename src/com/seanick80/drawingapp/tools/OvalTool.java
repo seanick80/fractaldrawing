@@ -2,6 +2,7 @@ package com.seanick80.drawingapp.tools;
 
 import com.seanick80.drawingapp.DrawingCanvas;
 import com.seanick80.drawingapp.fills.FillProvider;
+import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 
@@ -15,6 +16,16 @@ public class OvalTool implements Tool {
     private int strokeSize = 2;
 
     @Override public String getName() { return "Oval"; }
+
+    @Override
+    public JPanel createSettingsPanel(ToolSettingsContext ctx) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.add(ctx.getStrokeSizePanel());
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(ctx.getFillOptionsPanel());
+        return panel;
+    }
 
     public void setFilled(boolean filled) { this.filled = filled; }
     public void setFillProvider(FillProvider fp) { this.fillProvider = fp; }

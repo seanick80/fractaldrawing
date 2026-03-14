@@ -9,7 +9,8 @@ OUT="$BASEDIR/out"
 mkdir -p "$OUT"
 
 echo "Compiling..."
-javac -d "$OUT" $(ls "$SRC"/com/seanick80/drawingapp/*.java "$SRC"/com/seanick80/drawingapp/tools/*.java "$SRC"/com/seanick80/drawingapp/fills/*.java)
+find "$SRC" -name "*.java" | sed 's|^/\([a-zA-Z]\)/|\1:/|' > "$OUT/sources.txt"
+javac -d "$OUT" @"$OUT/sources.txt"
 
 echo "Build successful."
 

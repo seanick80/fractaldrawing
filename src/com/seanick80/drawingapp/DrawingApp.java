@@ -58,6 +58,7 @@ public class DrawingApp extends JFrame {
     private void registerDefaultFills() {
         fillRegistry.register(new SolidFill());
         fillRegistry.register(new GradientFill());
+        fillRegistry.register(new CustomGradientFill());
         fillRegistry.register(new CheckerboardFill());
         fillRegistry.register(new DiagonalStripeFill());
     }

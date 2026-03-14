@@ -10,6 +10,7 @@ public class EraserTool implements Tool {
     private int size = 16;
 
     @Override public String getName() { return "Eraser"; }
+    @Override public int getDefaultStrokeSize() { return 18; }
 
     public void setSize(int size) { this.size = size; }
 
