@@ -7,7 +7,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 
-public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionListener {
+public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionListener, MouseWheelListener {
 
     private BufferedImage image;
     private Tool activeTool;
@@ -15,6 +15,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     private ColorPicker colorPicker;
     private final UndoManager undoManager;
     private boolean drawing;
+    private int lastMouseButton;
 
     public DrawingCanvas(int width, int height, UndoManager undoManager) {
         this.undoManager = undoManager;
@@ -22,6 +23,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         newImage(width, height);
         addMouseListener(this);
         addMouseMotionListener(this);
+        addMouseWheelListener(this);
         setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
     }
 
@@ -89,9 +91,14 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         }
     }
 
+    public int getLastMouseButton() {
+        return lastMouseButton;
+    }
+
     @Override
     public void mousePressed(MouseEvent e) {
         if (activeTool != null && inBounds(e)) {
+            lastMouseButton = e.getButton();
             saveUndoState();
             drawing = true;
             activeTool.mousePressed(image, e.getX(), e.getY(), this);
@@ -120,6 +127,15 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     @Override
     public void mouseMoved(MouseEvent e) {
         updateStatus(e);
+    }
+
+    @Override
+    public void mouseWheelMoved(MouseWheelEvent e) {
+        if (activeTool != null && inBounds(e)) {
+            saveUndoState();
+            activeTool.mouseWheelMoved(image, e.getX(), e.getY(), e.getWheelRotation(), this);
+            repaint();
+        }
     }
 
     @Override public void mouseClicked(MouseEvent e) {}

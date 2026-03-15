@@ -15,6 +15,12 @@ public class GradientEditorDialog extends JDialog {
     private boolean accepted;
     private static File lastDirectory;
 
+    public static void setDefaultDirectory(File dir) {
+        if (lastDirectory == null && dir != null && dir.isDirectory()) {
+            lastDirectory = dir;
+        }
+    }
+
     public GradientEditorDialog(Window owner, ColorGradient gradient) {
         super(owner, "Gradient Editor", ModalityType.APPLICATION_MODAL);
         ColorGradient workingCopy = new ColorGradient(gradient);

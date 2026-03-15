@@ -168,6 +168,14 @@ public class DrawingApp extends JFrame {
     }
 
     public static void main(String[] args) {
+        // Parse command-line arguments
+        for (int i = 0; i < args.length; i++) {
+            if ("--gradient-dir".equals(args[i]) && i + 1 < args.length) {
+                java.io.File dir = new java.io.File(args[++i]);
+                com.seanick80.drawingapp.gradient.GradientEditorDialog.setDefaultDirectory(dir);
+            }
+        }
+
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());

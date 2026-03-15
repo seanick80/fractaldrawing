@@ -44,9 +44,9 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         add(toolLabel);
         add(Box.createVerticalStrut(4));
 
-        JPanel buttonPanel = new JPanel(new GridLayout(3, 2, 2, 2));
+        JPanel buttonPanel = new JPanel(new GridLayout(4, 2, 2, 2));
         buttonPanel.setAlignmentX(LEFT_ALIGNMENT);
-        buttonPanel.setMaximumSize(new Dimension(120, 100));
+        buttonPanel.setMaximumSize(new Dimension(120, 130));
 
         // Build reusable components before adding tools (tools reference them via context)
         strokeSpinner = buildStrokeSpinner();
@@ -62,6 +62,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         addTool(buttonPanel, new OvalTool(), false);
         addTool(buttonPanel, new EraserTool(), false);
         addTool(buttonPanel, new FillTool(), false);
+        addTool(buttonPanel, new FractalTool(), false);
 
         add(buttonPanel);
         add(Box.createVerticalStrut(12));

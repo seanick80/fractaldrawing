@@ -12,6 +12,9 @@ public interface Tool {
     void mouseReleased(BufferedImage image, int x, int y, DrawingCanvas canvas);
     void drawPreview(Graphics2D g);
 
+    /** Called when the mouse wheel is scrolled over the canvas. */
+    default void mouseWheelMoved(BufferedImage image, int x, int y, int wheelRotation, DrawingCanvas canvas) {}
+
     /** Default stroke size for this tool. */
     default int getDefaultStrokeSize() { return 2; }
 
