@@ -15,6 +15,9 @@ public interface Tool {
     /** Called when the mouse wheel is scrolled over the canvas. */
     default void mouseWheelMoved(BufferedImage image, int x, int y, int wheelRotation, DrawingCanvas canvas) {}
 
+    /** Called when this tool becomes the active tool. */
+    default void onActivated(BufferedImage image, DrawingCanvas canvas) {}
+
     /** Default stroke size for this tool. */
     default int getDefaultStrokeSize() { return 2; }
 

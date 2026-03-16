@@ -163,10 +163,6 @@ public class FractalTool implements Tool {
         renderBtn.setFont(renderBtn.getFont().deriveFont(10f));
         renderBtn.addActionListener(e -> {
             if (lastImage != null && lastCanvas != null) {
-                if (currentWorker != null && !currentWorker.isDone()) {
-                    renderer.cancelRender();
-                    currentWorker.cancel(true);
-                }
                 renderAsync(lastImage, lastCanvas);
             }
         });
@@ -218,15 +214,16 @@ public class FractalTool implements Tool {
     }
 
     @Override
+    public void onActivated(BufferedImage image, DrawingCanvas canvas) {
+        lastImage = image;
+        lastCanvas = canvas;
+        renderAsync(image, canvas);
+    }
+
+    @Override
     public void mousePressed(BufferedImage image, int x, int y, DrawingCanvas canvas) {
         lastImage = image;
         lastCanvas = canvas;
-
-        // Cancel any in-progress render
-        if (currentWorker != null && !currentWorker.isDone()) {
-            renderer.cancelRender();
-            currentWorker.cancel(true);
-        }
 
         int w = image.getWidth();
         int h = image.getHeight();
@@ -265,11 +262,6 @@ public class FractalTool implements Tool {
 
     @Override
     public void mouseWheelMoved(BufferedImage image, int x, int y, int wheelRotation, DrawingCanvas canvas) {
-        // Cancel any in-progress render
-        if (currentWorker != null && !currentWorker.isDone()) {
-            renderer.cancelRender();
-            currentWorker.cancel(true);
-        }
 
         int w = image.getWidth();
         int h = image.getHeight();
@@ -304,6 +296,12 @@ public class FractalTool implements Tool {
     }
 
     private void renderAsync(BufferedImage image, DrawingCanvas canvas) {
+        // Always cancel any in-progress render before starting a new one
+        if (currentWorker != null && !currentWorker.isDone()) {
+            renderer.cancelRender();
+            currentWorker.cancel(true);
+        }
+
         renderStartTime = System.currentTimeMillis();
         int w = image.getWidth();
         int h = image.getHeight();

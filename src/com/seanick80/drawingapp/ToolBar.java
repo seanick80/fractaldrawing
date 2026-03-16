@@ -338,6 +338,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
             refreshSettingsPanel();
             applyStrokeSize();
             applyFillSettings();
+            tool.onActivated(canvas.getImage(), canvas);
         });
         panel.add(btn);
         if (selected) {
@@ -361,6 +362,10 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
 
     public Tool getActiveTool() {
         return activeTool;
+    }
+
+    public Tool getTool(String name) {
+        return tools.get(name);
     }
 
     private void applyStrokeSize() {

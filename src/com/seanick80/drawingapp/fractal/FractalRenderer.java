@@ -14,6 +14,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.IntStream;
 
 /**
@@ -25,12 +26,15 @@ import java.util.stream.IntStream;
 public class FractalRenderer {
 
     public enum RenderMode { AUTO, DOUBLE, BIGDECIMAL, PERTURBATION }
+    public enum ColorMode { MOD, DIVISION }
 
     private static final double TOLERANCE_FRACTION = 0.1;
     private static final double BIGDECIMAL_THRESHOLD = 1e-13;
 
     private FractalType type = FractalType.MANDELBROT;
     private RenderMode renderMode = RenderMode.AUTO;
+    private ColorMode colorMode = ColorMode.MOD;
+    private static final int MOD_PALETTE_SIZE = 64;
     private BigDecimal minReal = new BigDecimal("-2");
     private BigDecimal maxReal = new BigDecimal("2");
     private BigDecimal minImag = new BigDecimal("-2");
@@ -40,6 +44,8 @@ public class FractalRenderer {
     private BigDecimal juliaImag = new BigDecimal("0.27015");
     private IterationQuadTree cache = new IterationQuadTree(-4, 4, -4, 4);
     private boolean lastRenderWasBigDecimal = false;
+
+    private final ReentrantLock renderLock = new ReentrantLock();
 
     // BigDecimal progress tracking
     private final AtomicInteger bigDecimalCompletedRows = new AtomicInteger(0);
@@ -109,6 +115,9 @@ public class FractalRenderer {
     public RenderMode getRenderMode() { return renderMode; }
     public void setRenderMode(RenderMode mode) { this.renderMode = mode; }
 
+    public ColorMode getColorMode() { return colorMode; }
+    public void setColorMode(ColorMode mode) { this.colorMode = mode; }
+
     public IterationQuadTree getCache() { return cache; }
 
     public boolean isLastRenderBigDecimal() { return lastRenderWasBigDecimal; }
@@ -134,52 +143,76 @@ public class FractalRenderer {
      * Points inside the set (iterations == maxIterations) are colored black.
      * Auto-switches between double and BigDecimal based on zoom depth.
      */
-    public synchronized BufferedImage render(int width, int height, ColorGradient gradient) {
-        BigDecimal rangeReal = maxReal.subtract(minReal);
-        BigDecimal rangeImag = maxImag.subtract(minImag);
-
-        boolean useBigDecimal;
-        boolean usePerturbationOnly = false;
-        boolean useBigDecimalOnly = false;
-
-        switch (renderMode) {
-            case DOUBLE:
-                useBigDecimal = false;
-                break;
-            case BIGDECIMAL:
-                useBigDecimal = true;
-                useBigDecimalOnly = true;
-                break;
-            case PERTURBATION:
-                useBigDecimal = true;
-                usePerturbationOnly = true;
-                break;
-            default: // AUTO
-                useBigDecimal = rangeReal.abs().doubleValue() < BIGDECIMAL_THRESHOLD
-                             || rangeImag.abs().doubleValue() < BIGDECIMAL_THRESHOLD;
-                break;
+    public BufferedImage render(int width, int height, ColorGradient gradient) {
+        try {
+            renderLock.lockInterruptibly();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
         }
+        try {
+            BigDecimal rangeReal = maxReal.subtract(minReal);
+            BigDecimal rangeImag = maxImag.subtract(minImag);
 
-        if (useBigDecimal != lastRenderWasBigDecimal) {
-            cache.clear();
-            lastRenderWasBigDecimal = useBigDecimal;
-        }
+            boolean useBigDecimal;
+            boolean usePerturbationOnly = false;
+            boolean useBigDecimalOnly = false;
 
-        if (useBigDecimal) {
-            if (useBigDecimalOnly) {
-                return renderPureBigDecimal(width, height, gradient, rangeReal, rangeImag);
+            switch (renderMode) {
+                case DOUBLE:
+                    useBigDecimal = false;
+                    break;
+                case BIGDECIMAL:
+                    useBigDecimal = true;
+                    useBigDecimalOnly = true;
+                    break;
+                case PERTURBATION:
+                    useBigDecimal = true;
+                    usePerturbationOnly = true;
+                    break;
+                default: // AUTO
+                    useBigDecimal = rangeReal.abs().doubleValue() < BIGDECIMAL_THRESHOLD
+                                 || rangeImag.abs().doubleValue() < BIGDECIMAL_THRESHOLD;
+                    break;
             }
-            return renderBigDecimal(width, height, gradient, rangeReal, rangeImag);
-        } else {
-            return renderDouble(width, height, gradient);
+
+            if (useBigDecimal != lastRenderWasBigDecimal) {
+                cache.clear();
+                lastRenderWasBigDecimal = useBigDecimal;
+            }
+
+            if (useBigDecimal) {
+                if (useBigDecimalOnly) {
+                    return renderPureBigDecimal(width, height, gradient, rangeReal, rangeImag);
+                }
+                return renderBigDecimal(width, height, gradient, rangeReal, rangeImag);
+            } else {
+                return renderDouble(width, height, gradient);
+            }
+        } finally {
+            renderLock.unlock();
         }
+    }
+
+    private int[] buildColorLut(ColorGradient gradient) {
+        int size = (colorMode == ColorMode.MOD) ? MOD_PALETTE_SIZE : maxIterations;
+        Color[] colors = gradient.toColors(size);
+        int[] lut = new int[size];
+        for (int i = 0; i < size; i++) lut[i] = colors[i].getRGB();
+        return lut;
+    }
+
+    private int colorForIter(int iter, int[] lut) {
+        if (iter >= maxIterations) return Color.BLACK.getRGB();
+        if (colorMode == ColorMode.MOD) return lut[iter % lut.length];
+        return lut[iter];
     }
 
     private BufferedImage renderDouble(int width, int height, ColorGradient gradient) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         int[] rgb = new int[width * height];
 
-        Color[] lut = gradient.toColors(maxIterations);
+        int[] lut = buildColorLut(gradient);
 
         double dMinReal = minReal.doubleValue();
         double dMaxReal = maxReal.doubleValue();
@@ -206,8 +239,6 @@ public class FractalRenderer {
         double scaleY = viewImag / (height - 1);
         double tolerance = Math.min(scaleX, scaleY) * TOLERANCE_FRACTION;
 
-        int black = Color.BLACK.getRGB();
-
         int[] iters = new int[width * height];
         boolean[] cacheHit = new boolean[width * height];
 
@@ -233,7 +264,7 @@ public class FractalRenderer {
                     iters[idx] = iter;
                 }
 
-                rgb[idx] = (iters[idx] >= maxIterations) ? black : lut[iters[idx]].getRGB();
+                rgb[idx] = colorForIter(iters[idx], lut);
             }
         });
 
@@ -269,7 +300,7 @@ public class FractalRenderer {
         bigDecimalTotalRows = height;
         renderCancelled = false;
 
-        Color[] lut = gradient.toColors(maxIterations);
+        int[] lut = buildColorLut(gradient);
 
         // Calculate precision: 20 + log10(zoom)
         double zoom = 4.0 / Math.min(rangeReal.abs().doubleValue(), rangeImag.abs().doubleValue());
@@ -300,10 +331,11 @@ public class FractalRenderer {
         double[] refZi = new double[maxIterations + 1];
         boolean isJulia = (type == FractalType.JULIA);
 
+        int refEscapeIter;
         if (isJulia) {
-            computeReferenceOrbitJulia(centerReal, centerImag, refZr, refZi, mc);
+            refEscapeIter = computeReferenceOrbitJulia(centerReal, centerImag, refZr, refZi, mc);
         } else {
-            computeReferenceOrbitMandelbrot(centerReal, centerImag, refZr, refZi, mc);
+            refEscapeIter = computeReferenceOrbitMandelbrot(centerReal, centerImag, refZr, refZi, mc);
         }
 
         // 2. Per-pixel deltas computed in double (pixel offset from center)
@@ -311,8 +343,6 @@ public class FractalRenderer {
         double dScaleY = scaleY.doubleValue();
         double halfW = (width - 1) / 2.0;
         double halfH = (height - 1) / 2.0;
-
-        int black = Color.BLACK.getRGB();
 
         // For BigDecimal fallback on glitched pixels
         BigDecimal finalMinReal = centerReal.subtract(viewReal.divide(BigDecimal.valueOf(2), mc), mc);
@@ -334,7 +364,7 @@ public class FractalRenderer {
                     double dcr = (col - halfW) * dScaleX;
                     int idx = r * width + col;
 
-                    int iter = perturbIterate(refZr, refZi, dcr, dci, isJulia);
+                    int iter = perturbIterate(refZr, refZi, dcr, dci, isJulia, refEscapeIter);
 
                     if (iter == GLITCH_DETECTED) {
                         // Fallback to full BigDecimal for this pixel
@@ -347,7 +377,7 @@ public class FractalRenderer {
                         }
                     }
 
-                    rgb[idx] = (iter >= maxIterations) ? black : lut[iter].getRGB();
+                    rgb[idx] = colorForIter(iter, lut);
                 }
                 bigDecimalCompletedRows.incrementAndGet();
             });
@@ -386,7 +416,7 @@ public class FractalRenderer {
         bigDecimalTotalRows = height;
         renderCancelled = false;
 
-        Color[] lut = gradient.toColors(maxIterations);
+        int[] lut = buildColorLut(gradient);
 
         double zoom = 4.0 / Math.min(rangeReal.abs().doubleValue(), rangeImag.abs().doubleValue());
         int precision = 20 + (int) Math.ceil(Math.log10(Math.max(zoom, 1)));
@@ -414,7 +444,6 @@ public class FractalRenderer {
         boolean isJulia = (type == FractalType.JULIA);
         BigDecimal jrBig = juliaReal;
         BigDecimal jiBig = juliaImag;
-        int black = Color.BLACK.getRGB();
 
         int nThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService pool = Executors.newFixedThreadPool(nThreads);
@@ -434,7 +463,7 @@ public class FractalRenderer {
                         iter = type.iterateBig(cx, cy, maxIterations, mc);
                     }
                     int idx = r * width + col;
-                    rgb[idx] = (iter >= maxIterations) ? black : lut[iter].getRGB();
+                    rgb[idx] = colorForIter(iter, lut);
                 }
                 bigDecimalCompletedRows.incrementAndGet();
             });
@@ -473,20 +502,39 @@ public class FractalRenderer {
         BigDecimal four = BigDecimal.valueOf(4);
         BigDecimal two = BigDecimal.valueOf(2);
         int escapeIter = maxIterations;
+        double dCr = cr.doubleValue(), dCi = ci.doubleValue();
         for (int i = 0; i < maxIterations; i++) {
             outZr[i] = zr.doubleValue();
             outZi[i] = zi.doubleValue();
+            if (escapeIter < maxIterations) {
+                // Past escape: continue in double (BigDecimal would overflow)
+                double dzr = outZr[i], dzi = outZi[i];
+                double dzr2 = dzr * dzr, dzi2 = dzi * dzi;
+                double newDzi = 2 * dzr * dzi + dCi;
+                outZr[i + 1] = dzr2 - dzi2 + dCr;
+                outZi[i + 1] = newDzi;
+                continue;
+            }
             BigDecimal zr2 = zr.multiply(zr, mc);
             BigDecimal zi2 = zi.multiply(zi, mc);
-            if (escapeIter == maxIterations && zr2.add(zi2, mc).compareTo(four) > 0) {
+            if (zr2.add(zi2, mc).compareTo(four) > 0) {
                 escapeIter = i;
+                // Switch to double for remaining iterations
+                double dzr = zr.doubleValue(), dzi = zi.doubleValue();
+                double dzr2 = dzr * dzr, dzi2 = dzi * dzi;
+                double newDzi = 2 * dzr * dzi + dCi;
+                outZr[i + 1] = dzr2 - dzi2 + dCr;
+                outZi[i + 1] = newDzi;
+                continue;
             }
             BigDecimal newZi = two.multiply(zr, mc).multiply(zi, mc).add(ci, mc);
             zr = zr2.subtract(zi2, mc).add(cr, mc);
             zi = newZi;
         }
-        outZr[maxIterations] = zr.doubleValue();
-        outZi[maxIterations] = zi.doubleValue();
+        if (escapeIter == maxIterations) {
+            outZr[maxIterations] = zr.doubleValue();
+            outZi[maxIterations] = zi.doubleValue();
+        }
         return escapeIter;
     }
 
@@ -500,21 +548,38 @@ public class FractalRenderer {
         BigDecimal cr = juliaReal, ci = juliaImag;
         BigDecimal four = BigDecimal.valueOf(4);
         BigDecimal two = BigDecimal.valueOf(2);
+        double dCr = cr.doubleValue(), dCi = ci.doubleValue();
         int escapeIter = maxIterations;
         for (int i = 0; i < maxIterations; i++) {
             outZr[i] = zr.doubleValue();
             outZi[i] = zi.doubleValue();
+            if (escapeIter < maxIterations) {
+                double dzr = outZr[i], dzi = outZi[i];
+                double dzr2 = dzr * dzr, dzi2 = dzi * dzi;
+                double newDzi = 2 * dzr * dzi + dCi;
+                outZr[i + 1] = dzr2 - dzi2 + dCr;
+                outZi[i + 1] = newDzi;
+                continue;
+            }
             BigDecimal zr2 = zr.multiply(zr, mc);
             BigDecimal zi2 = zi.multiply(zi, mc);
-            if (escapeIter == maxIterations && zr2.add(zi2, mc).compareTo(four) > 0) {
+            if (zr2.add(zi2, mc).compareTo(four) > 0) {
                 escapeIter = i;
+                double dzr = zr.doubleValue(), dzi = zi.doubleValue();
+                double dzr2 = dzr * dzr, dzi2 = dzi * dzi;
+                double newDzi = 2 * dzr * dzi + dCi;
+                outZr[i + 1] = dzr2 - dzi2 + dCr;
+                outZi[i + 1] = newDzi;
+                continue;
             }
             BigDecimal newZi = two.multiply(zr, mc).multiply(zi, mc).add(ci, mc);
             zr = zr2.subtract(zi2, mc).add(cr, mc);
             zi = newZi;
         }
-        outZr[maxIterations] = zr.doubleValue();
-        outZi[maxIterations] = zi.doubleValue();
+        if (escapeIter == maxIterations) {
+            outZr[maxIterations] = zr.doubleValue();
+            outZi[maxIterations] = zi.doubleValue();
+        }
         return escapeIter;
     }
 
@@ -525,29 +590,24 @@ public class FractalRenderer {
      * Mandelbrot: δz₀ = 0, δz_{n+1} = 2·Z_n·δz_n + δz_n² + δc
      * Julia:      δz₀ = δc, δz_{n+1} = 2·Z_n·δz_n + δz_n²
      *
-     * Returns iteration count, or GLITCH_DETECTED if perturbation became unreliable.
-     */
-    /**
-     * Perturbation iteration: compute escape time for a pixel at offset (dcr, dci)
-     * from the reference orbit, using fast double arithmetic.
-     *
-     * Mandelbrot: δz₀ = 0, δz_{n+1} = 2·Z_n·δz_n + δz_n² + δc
-     * Julia:      δz₀ = δc, δz_{n+1} = 2·Z_n·δz_n + δz_n²
-     *
-     * Glitch detection uses the "relative size" test: a glitch occurs when the
-     * perturbation δz dominates the full value Z+δz so badly that double precision
-     * can't represent the sum accurately. We check |δz|² > |Z+δz|² * 1e6.
+     * If the pixel hasn't escaped by the time the reference orbit escapes,
+     * perturbation is invalid (reference Z values blow up) so we return
+     * GLITCH_DETECTED for BigDecimal fallback.
      *
      * Returns iteration count, or GLITCH_DETECTED if perturbation became unreliable.
      */
     private int perturbIterate(double[] refZr, double[] refZi,
-                                double dcr, double dci, boolean isJulia) {
+                                double dcr, double dci, boolean isJulia,
+                                int refEscapeIter) {
         double dzr = isJulia ? dcr : 0;
         double dzi = isJulia ? dci : 0;
         double addR = isJulia ? 0 : dcr;
         double addI = isJulia ? 0 : dci;
 
-        for (int i = 0; i < maxIterations; i++) {
+        // Only iterate up to refEscapeIter — beyond that, reference Z is invalid
+        int limit = Math.min(maxIterations, refEscapeIter);
+
+        for (int i = 0; i < limit; i++) {
             double Zr = refZr[i], Zi = refZi[i];
 
             // δz_{n+1} = 2·Z_n·δz_n + δz_n² + δc
@@ -569,6 +629,10 @@ public class FractalRenderer {
             }
         }
 
+        // If reference escaped but this pixel didn't, fall back to BigDecimal
+        if (refEscapeIter < maxIterations) {
+            return GLITCH_DETECTED;
+        }
         return maxIterations;
     }
 }

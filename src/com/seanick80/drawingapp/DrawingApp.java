@@ -1,6 +1,8 @@
 package com.seanick80.drawingapp;
 
 import com.seanick80.drawingapp.fills.*;
+import com.seanick80.drawingapp.fractal.FractalRenderer;
+import com.seanick80.drawingapp.fractal.FractalType;
 import com.seanick80.drawingapp.tools.*;
 
 import javax.swing.*;
@@ -8,6 +10,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.math.BigDecimal;
 import javax.imageio.ImageIO;
 
 public class DrawingApp extends JFrame {
@@ -120,7 +123,120 @@ public class DrawingApp extends JFrame {
 
         menuBar.add(fileMenu);
         menuBar.add(editMenu);
+        menuBar.add(createFractalMenu());
         return menuBar;
+    }
+
+    private FractalTool getFractalTool() {
+        Tool t = toolBar.getTool("Fractal");
+        return (t instanceof FractalTool) ? (FractalTool) t : null;
+    }
+
+    private void applyFractalAndRender(java.util.function.Consumer<FractalTool> action) {
+        FractalTool ft = getFractalTool();
+        if (ft == null) return;
+        action.accept(ft);
+        // Trigger render if fractal tool is active and canvas is available
+        ft.onActivated(canvas.getImage(), canvas);
+    }
+
+    private JMenu createFractalMenu() {
+        JMenu menu = new JMenu("Fractal");
+        menu.setMnemonic('R');
+
+        // --- Fractal Type ---
+        JMenu typeMenu = new JMenu("Type");
+        ButtonGroup typeGroup = new ButtonGroup();
+        JRadioButtonMenuItem mandelbrotItem = new JRadioButtonMenuItem("Mandelbrot", true);
+        JRadioButtonMenuItem juliaItem = new JRadioButtonMenuItem("Julia");
+        typeGroup.add(mandelbrotItem);
+        typeGroup.add(juliaItem);
+
+        mandelbrotItem.addActionListener(e -> applyFractalAndRender(ft -> {
+            ft.getRenderer().setType(FractalType.MANDELBROT);
+            ft.getRenderer().setBounds(-2, 2, -2, 2);
+        }));
+        juliaItem.addActionListener(e -> applyFractalAndRender(ft -> {
+            ft.getRenderer().setType(FractalType.JULIA);
+            ft.getRenderer().setBounds(-2, 2, -2, 2);
+        }));
+
+        typeMenu.add(mandelbrotItem);
+        typeMenu.add(juliaItem);
+        menu.add(typeMenu);
+
+        // --- Color Mode ---
+        JMenu colorMenu = new JMenu("Coloring");
+        ButtonGroup colorGroup = new ButtonGroup();
+        JRadioButtonMenuItem modItem = new JRadioButtonMenuItem("Mod (cyclic)", true);
+        JRadioButtonMenuItem divItem = new JRadioButtonMenuItem("Division (linear)");
+        colorGroup.add(modItem);
+        colorGroup.add(divItem);
+
+        modItem.addActionListener(e -> applyFractalAndRender(ft ->
+            ft.getRenderer().setColorMode(FractalRenderer.ColorMode.MOD)));
+        divItem.addActionListener(e -> applyFractalAndRender(ft ->
+            ft.getRenderer().setColorMode(FractalRenderer.ColorMode.DIVISION)));
+
+        colorMenu.add(modItem);
+        colorMenu.add(divItem);
+        menu.add(colorMenu);
+
+        menu.addSeparator();
+
+        // --- Preset Locations ---
+        JMenu presetsMenu = new JMenu("Locations");
+
+        addPreset(presetsMenu, "Full Mandelbrot", FractalType.MANDELBROT,
+            "-2", "2", "-2", "2", 256);
+        addPreset(presetsMenu, "Full Julia", FractalType.JULIA,
+            "-2", "2", "-2", "2", 256);
+
+        presetsMenu.addSeparator();
+
+        addPreset(presetsMenu, "Seahorse Valley", FractalType.MANDELBROT,
+            "-0.7516", "-0.7346", "0.0534", "0.0661", 256);
+        addPreset(presetsMenu, "Mini Mandelbrot", FractalType.MANDELBROT,
+            "-1.7692", "-1.7642", "-0.0025", "0.0025", 512);
+        addPreset(presetsMenu, "Elephant Valley", FractalType.MANDELBROT,
+            "0.2501", "0.2601", "-0.0050", "0.0050", 512);
+        addPreset(presetsMenu, "Lightning", FractalType.MANDELBROT,
+            "-1.9855", "-1.9775", "-0.0010", "0.0010", 1024);
+
+        presetsMenu.addSeparator();
+
+        addPreset(presetsMenu, "Deep Zoom (1e13)", FractalType.MANDELBROT,
+            "-0.6596578041282916240699130664224003",
+            "-0.6596578041281954277657226502133863",
+            "-0.4505474984324947231692017068002755",
+            "-0.4505474984323985268650112905912615", 456);
+        addPreset(presetsMenu, "Deeper Zoom (1e17)", FractalType.MANDELBROT,
+            "-0.65965780412826339954936433105672396103",
+            "-0.65965780412826338780665141718755782163",
+            "-0.45054749843244648813621629936085526501",
+            "-0.45054749843244647639350338549168912561", 706);
+        addPreset(presetsMenu, "Deepest Zoom (1e18)", FractalType.MANDELBROT,
+            "-0.659657804128263429441678542563321007371",
+            "-0.659657804128263427973839428329675239951",
+            "-0.450547498432446486027726571727316188813",
+            "-0.450547498432446484559887457493670421393", 506);
+
+        menu.add(presetsMenu);
+
+        return menu;
+    }
+
+    private void addPreset(JMenu menu, String name, FractalType type,
+                           String minR, String maxR, String minI, String maxI, int iterations) {
+        JMenuItem item = new JMenuItem(name);
+        item.addActionListener(e -> applyFractalAndRender(ft -> {
+            ft.getRenderer().setType(type);
+            ft.getRenderer().setBounds(
+                new BigDecimal(minR), new BigDecimal(maxR),
+                new BigDecimal(minI), new BigDecimal(maxI));
+            ft.getRenderer().setMaxIterations(iterations);
+        }));
+        menu.add(item);
     }
 
     private void newImage() {

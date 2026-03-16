@@ -1,14 +1,28 @@
 # Drawing App
 
-A simple MS Paint-style drawing application built with Java Swing and Graphics2D.
+A Java Swing drawing application with an integrated fractal explorer featuring arbitrary-precision deep zoom with perturbation theory optimization.
 
 ## Features
 
-- **Drawing tools**: Pencil, Line, Rectangle, Oval, Eraser, Flood Fill
+### Drawing Tools
+- **Pencil, Line, Rectangle, Oval, Eraser, Flood Fill** with configurable stroke size
 - **Color picker**: 20-color palette + custom color chooser, foreground/background colors
-- **Pluggable fill system**: Solid, Gradient, Checkerboard, Diagonal Stripes (extensible)
+- **Pluggable fill system**: Solid, Gradient, Custom Gradient, Checkerboard, Diagonal Stripes
 - **Undo/Redo**: Up to 50 levels (Ctrl+Z / Ctrl+Y)
 - **File I/O**: Open and save PNG, JPG, BMP images
+
+### Fractal Explorer
+- **Mandelbrot and Julia sets** with click-to-zoom and scroll wheel navigation
+- **Arbitrary-precision deep zoom** using BigDecimal arithmetic — no pixelation at any zoom level
+- **Perturbation theory**: Computes one reference orbit at full precision, then uses fast double arithmetic for all other pixels. Automatic fallback to BigDecimal for interior pixels where perturbation is invalid.
+- **Auto-switching**: Renders in double precision at shallow zoom (fast), automatically switches to perturbation + BigDecimal past ~10^13 zoom
+- **Render modes**: AUTO (default), DOUBLE, BIGDECIMAL, PERTURBATION — selectable for benchmarking
+- **Color modes**: Mod (cyclic) for consistent color detail at all zoom levels, or Division (linear) for smooth gradients
+- **Quadtree cache**: Caches iteration counts in complex-plane coordinates, reused across renders in double mode
+- **Custom color gradients**: Full gradient editor with save/load support
+- **Save/Load locations**: Export and import fractal coordinates as JSON for bookmarking and sharing
+- **Preset locations**: Built-in menu with interesting locations from Seahorse Valley to 10^18 zoom
+- **Async rendering**: Non-blocking renders with cancellation support for responsive UI
 
 ## Build & Run
 
@@ -22,19 +36,80 @@ Requires Java 17+.
 build.cmd run
 ```
 
+## Testing
+
+```bash
+# Run regression tests (19 assertions covering all render modes)
+./test.sh       # Unix/Git Bash
+test.cmd        # Windows
+
+# Or directly
+java -ea -cp out com.seanick80.drawingapp.fractal.FractalRenderTest
+```
+
+Tests cover:
+- Render determinism
+- Perturbation vs BigDecimal correctness (structural match, interior pixel accuracy)
+- Deep zoom overflow handling (zoom > 10^17)
+- Double precision degradation detection
+- Julia set rendering
+- Cache stability across zoom cycles
+- All render mode switching
+
+## Benchmarking
+
+```bash
+# Performance benchmark — runs all locations, compares modes for deep zoom
+java -cp out com.seanick80.drawingapp.fractal.FractalBenchmark benchmarks/
+
+# Perturbation correctness evaluation — pixel-by-pixel comparison vs BigDecimal
+java -cp out com.seanick80.drawingapp.fractal.PerturbationEval benchmarks/
+
+# Single location with custom size
+java -cp out com.seanick80.drawingapp.fractal.FractalBenchmark benchmarks/bigdecimal_location.json 800 600
+```
+
+Benchmark locations included:
+- `bigdecimal_location.json` — zoom 4.16e13, 456 iterations
+- `deeper_location.json` — zoom 3.41e17, 706 iterations
+- `fractal_zoomed_5.json` — zoom 2.73e18, 506 iterations
+- `perturbation_error.json` — zoom 4.50e15, 41% interior pixels (perturbation stress test)
+- `double_seahorse.json` — Seahorse valley, moderate zoom
+- `double_mini_mandelbrot.json` — Mini Mandelbrot at -1.767
+
+## Architecture
+
+```
+src/com/seanick80/drawingapp/
+├── DrawingApp.java          # Main frame, menus (File, Edit, Fractal)
+├── DrawingCanvas.java       # Canvas with mouse/wheel event routing
+├── ToolBar.java             # Tool selection and settings panel
+├── fills/                   # Pluggable fill providers
+├── gradient/                # Color gradient editor and interpolation
+├── fractal/
+│   ├── FractalType.java     # Mandelbrot/Julia iteration (double + BigDecimal)
+│   ├── FractalRenderer.java # Rendering engine: double, perturbation, BigDecimal paths
+│   ├── IterationQuadTree.java  # Spatial cache for iteration counts
+│   ├── FractalBenchmark.java   # CLI performance benchmark
+│   ├── PerturbationEval.java   # CLI perturbation correctness evaluation
+│   └── FractalRenderTest.java  # Regression tests
+└── tools/
+    ├── Tool.java            # Tool interface
+    ├── FractalTool.java     # Fractal UI: zoom, save/load, async render
+    └── ...                  # Pencil, Line, Rectangle, Oval, Eraser, Fill
+```
+
 ## Adding Custom Fills
 
 1. Create a class implementing `FillProvider` in `src/com/seanick80/drawingapp/fills/`
 2. Register it in `DrawingApp.registerDefaultFills()`
 
-Example:
 ```java
 public class MyCustomFill implements FillProvider {
     @Override public String getName() { return "My Fill"; }
 
     @Override
     public Paint createPaint(Color baseColor, int x, int y, int w, int h) {
-        // Return any java.awt.Paint — Color, GradientPaint, TexturePaint, etc.
         return new GradientPaint(x, y, baseColor, x + w, y, Color.WHITE);
     }
 }

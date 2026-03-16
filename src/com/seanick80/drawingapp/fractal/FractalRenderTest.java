@@ -23,6 +23,8 @@ public class FractalRenderTest {
 
         testDoubleRenderDeterministic();
         testBigDecimalMatchesPerturbation();
+        testDeeperZoomAllModes();
+        testPerturbationInteriorPixels();
         testDoubleProducesBlockyAtDeepZoom();
         testDoubleModeShallowZoom();
         testJuliaSetRenders();
@@ -110,6 +112,64 @@ public class FractalRenderTest {
      * compared to BigDecimal, because double can't represent the coordinates precisely.
      * We verify this by checking that double produces fewer unique colors (blocky artifacts).
      */
+    private static void testDeeperZoomAllModes() {
+        // Zoom ~3.4e17: tests that reference orbit handles post-escape BigDecimal overflow
+        // (previously crashed with ArithmeticException: Overflow)
+        FractalRenderer r = newDeeperZoomRenderer();
+
+        for (FractalRenderer.RenderMode mode : FractalRenderer.RenderMode.values()) {
+            r.setRenderMode(mode);
+            r.getCache().clear();
+            try {
+                BufferedImage img = r.render(SIZE, SIZE, gradient());
+                boolean valid = img != null && countUniqueColors(img) > 1;
+                check("deeper zoom " + mode + " renders without crash (" +
+                      (img == null ? "null" : countUniqueColors(img) + " colors") + ")", valid);
+            } catch (Exception e) {
+                check("deeper zoom " + mode + " renders without crash (threw " +
+                      e.getClass().getSimpleName() + ": " + e.getMessage() + ")", false);
+            }
+        }
+    }
+
+    /**
+     * Tests that perturbation correctly identifies interior pixels when the
+     * reference orbit escapes but many pixels don't. Previously, post-escape
+     * reference Z values caused false escapes for interior pixels.
+     */
+    private static void testPerturbationInteriorPixels() {
+        FractalRenderer r = newRenderer();
+        r.setBounds(
+            new BigDecimal("-0.562333343441602469224560589876423039"),
+            new BigDecimal("-0.562333343441601581046140889751190703"),
+            new BigDecimal("-0.646896540537624584973152168988217449"),
+            new BigDecimal("-0.646896540537623696794732468862985113")
+        );
+        r.setMaxIterations(256);
+
+        r.setRenderMode(FractalRenderer.RenderMode.BIGDECIMAL);
+        r.getCache().clear();
+        BufferedImage bdImg = r.render(SIZE, SIZE, gradient());
+
+        r.setRenderMode(FractalRenderer.RenderMode.PERTURBATION);
+        r.getCache().clear();
+        BufferedImage ptImg = r.render(SIZE, SIZE, gradient());
+
+        int[] bdPx = getPixels(bdImg);
+        int[] ptPx = getPixels(ptImg);
+        int black = java.awt.Color.BLACK.getRGB();
+        int bdBlack = 0, ptBlack = 0, falseEscape = 0;
+        for (int i = 0; i < bdPx.length; i++) {
+            if (bdPx[i] == black) bdBlack++;
+            if (ptPx[i] == black) ptBlack++;
+            if (bdPx[i] == black && ptPx[i] != black) falseEscape++;
+        }
+
+        check("perturbation interior pixel count matches (bd=" + bdBlack +
+              ", pt=" + ptBlack + ", false_escape=" + falseEscape + ")",
+              falseEscape == 0);
+    }
+
     private static void testDoubleProducesBlockyAtDeepZoom() {
         FractalRenderer r = newDeepZoomRenderer();
 
@@ -227,6 +287,18 @@ public class FractalRenderTest {
     private static FractalRenderer newRenderer() {
         FractalRenderer r = new FractalRenderer();
         r.setType(FractalType.MANDELBROT);
+        return r;
+    }
+
+    private static FractalRenderer newDeeperZoomRenderer() {
+        FractalRenderer r = newRenderer();
+        r.setBounds(
+            new BigDecimal("-0.65965780412826339954936433105672396103"),
+            new BigDecimal("-0.65965780412826338780665141718755782163"),
+            new BigDecimal("-0.45054749843244648813621629936085526501"),
+            new BigDecimal("-0.45054749843244647639350338549168912561")
+        );
+        r.setMaxIterations(706);
         return r;
     }
 
