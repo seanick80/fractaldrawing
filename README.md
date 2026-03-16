@@ -114,3 +114,35 @@ public class MyCustomFill implements FillProvider {
     }
 }
 ```
+
+## Future Work
+
+### Performance
+
+- **Memory hygiene** — Pre-allocate buffers on fractal tool initialization instead of reallocating per render. Remove allocations from the perturbation and BigDecimal hot paths where optimization matters most.
+
+- **Interior pruning improvements** — Current Mariani-Silver boundary sampling is pixel-perfect but expensive. Explore hierarchical quadtree subdivision: if a block's boundary is all interior, skip it; otherwise subdivide and repeat. This should significantly reduce the number of BigDecimal fallback computations for interior-heavy regions.
+
+- **Pre-calculate pixel coordinates** — Compute the real and imaginary axis values for the current viewport once (two 1D arrays), then pass them into each pixel worker. Saves 2–4 orders of magnitude of coordinate mapping computation per iteration.
+
+- **Progress indicator** — Add percent-complete status for slow renders. Especially useful for deep zoom locations like:
+  ```json
+  {
+    "type": "MANDELBROT",
+    "minReal": "-1.25015600357202160012093372643103594",
+    "maxReal": "-1.25015600357202069062623195350279806",
+    "minImag": "0.00967906445708459917854086823385124937",
+    "maxImag": "0.00967906445708550867324264116208916425",
+    "maxIterations": 556
+  }
+  ```
+
+### Features
+
+- **Animations**
+  - *Iteration animation* — Render incrementally (add one iteration per frame), save as video
+  - *Zoom animation* — Smooth animated zoom into a target location
+  - *Palette cycle animation* — Rotate colors through the gradient over time
+  - Previous version of this app had these as selectable screen saver animations
+
+- **Random location explorer** — Heuristic-based discovery of interesting fractal locations. Pick random coordinates in [-2, 2] with random zoom levels, sample a few points, and filter for locations with varied palette entries (not all interior). Could leverage AI for smarter location selection.
