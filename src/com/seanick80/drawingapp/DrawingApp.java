@@ -182,6 +182,12 @@ public class DrawingApp extends JFrame {
         colorMenu.add(divItem);
         menu.add(colorMenu);
 
+        // --- Interior Pruning ---
+        JCheckBoxMenuItem pruningItem = new JCheckBoxMenuItem("Interior Pruning", true);
+        pruningItem.addActionListener(e -> applyFractalAndRender(ft ->
+            ft.getRenderer().setInteriorPruning(pruningItem.isSelected())));
+        menu.add(pruningItem);
+
         menu.addSeparator();
 
         // --- Preset Locations ---

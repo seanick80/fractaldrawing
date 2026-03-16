@@ -44,6 +44,7 @@ public class FractalRenderer {
     private BigDecimal juliaImag = new BigDecimal("0.27015");
     private IterationQuadTree cache = new IterationQuadTree(-4, 4, -4, 4);
     private boolean lastRenderWasBigDecimal = false;
+    private boolean interiorPruning = true;
 
     private final ReentrantLock renderLock = new ReentrantLock();
 
@@ -121,6 +122,9 @@ public class FractalRenderer {
     public IterationQuadTree getCache() { return cache; }
 
     public boolean isLastRenderBigDecimal() { return lastRenderWasBigDecimal; }
+
+    public boolean isInteriorPruning() { return interiorPruning; }
+    public void setInteriorPruning(boolean enabled) { this.interiorPruning = enabled; }
 
     public boolean needsBigDecimal() {
         BigDecimal rangeReal = maxReal.subtract(minReal);
@@ -350,17 +354,99 @@ public class FractalRenderer {
         BigDecimal jrBig = juliaReal;
         BigDecimal jiBig = juliaImag;
 
-        // 3. Parallel perturbation iteration
+        // 3. Interior pruning (Mariani-Silver): divide image into large blocks,
+        //    iterate every boundary pixel with BigDecimal. If all boundary pixels
+        //    are interior (maxIterations), the entire block is interior — fill black.
         int nThreads = Runtime.getRuntime().availableProcessors();
-        ExecutorService pool = Executors.newFixedThreadPool(nThreads);
+        ExecutorService pool;
+        int blackRgb = Color.BLACK.getRGB();
+
+        int blockW = 50, blockH = 100;
+        int blocksX = (width + blockW - 1) / blockW;
+        int blocksY = (height + blockH - 1) / blockH;
+        boolean[] interiorBlock = new boolean[blocksX * blocksY];
+
+        if (interiorPruning && !renderCancelled) {
+            // Phase 1: Check every boundary pixel of each block using BigDecimal
+            pool = Executors.newFixedThreadPool(nThreads);
+            for (int by = 0; by < blocksY; by++) {
+                for (int bx = 0; bx < blocksX; bx++) {
+                    final int fbx = bx, fby = by;
+                    pool.submit(() -> {
+                        if (renderCancelled) return;
+                        int startX = fbx * blockW;
+                        int startY = fby * blockH;
+                        int endX = Math.min(startX + blockW, width);
+                        int endY = Math.min(startY + blockH, height);
+                        int bIdx = fby * blocksX + fbx;
+
+                        // Iterate all boundary pixels
+                        boolean allInterior = true;
+                        // Top and bottom edges
+                        for (int px = startX; px < endX && allInterior; px++) {
+                            if (renderCancelled) return;
+                            allInterior = isBoundaryPixelInterior(px, startY,
+                                finalMinReal, finalMinImag, scaleX, scaleY,
+                                isJulia, jrBig, jiBig, mc);
+                            if (allInterior && endY - 1 > startY) {
+                                allInterior = isBoundaryPixelInterior(px, endY - 1,
+                                    finalMinReal, finalMinImag, scaleX, scaleY,
+                                    isJulia, jrBig, jiBig, mc);
+                            }
+                        }
+                        // Left and right edges (excluding corners already checked)
+                        for (int py = startY + 1; py < endY - 1 && allInterior; py++) {
+                            if (renderCancelled) return;
+                            allInterior = isBoundaryPixelInterior(startX, py,
+                                finalMinReal, finalMinImag, scaleX, scaleY,
+                                isJulia, jrBig, jiBig, mc);
+                            if (allInterior && endX - 1 > startX) {
+                                allInterior = isBoundaryPixelInterior(endX - 1, py,
+                                    finalMinReal, finalMinImag, scaleX, scaleY,
+                                    isJulia, jrBig, jiBig, mc);
+                            }
+                        }
+
+                        if (allInterior) {
+                            interiorBlock[bIdx] = true;
+                            // Fill entire block with black
+                            for (int py = startY; py < endY; py++) {
+                                for (int px = startX; px < endX; px++) {
+                                    rgb[py * width + px] = blackRgb;
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            pool.shutdown();
+            try {
+                while (!pool.isTerminated()) {
+                    pool.awaitTermination(100, TimeUnit.MILLISECONDS);
+                    if (renderCancelled) { pool.shutdownNow(); break; }
+                }
+            } catch (InterruptedException e) {
+                renderCancelled = true;
+                pool.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        // Phase 2: Perturbation iteration for non-interior pixels
+        pool = Executors.newFixedThreadPool(nThreads);
 
         for (int row = 0; row < height; row++) {
             final int r = row;
+            final int rowBlockY = r / blockH;
             pool.submit(() -> {
                 if (renderCancelled) return;
                 double dci = (r - halfH) * dScaleY;
                 for (int col = 0; col < width; col++) {
                     if (renderCancelled) return;
+                    int blockIdx = rowBlockY * blocksX + (col / blockW);
+                    if (interiorBlock[blockIdx]) {
+                        continue; // Already filled with black
+                    }
                     double dcr = (col - halfW) * dScaleX;
                     int idx = r * width + col;
 
@@ -402,6 +488,22 @@ public class FractalRenderer {
         image.setRGB(0, 0, width, height, rgb, 0, width);
         progressiveRgb = null;
         return image;
+    }
+
+    private boolean isBoundaryPixelInterior(int px, int py,
+                                               BigDecimal minR, BigDecimal minI,
+                                               BigDecimal scaleX, BigDecimal scaleY,
+                                               boolean isJulia, BigDecimal jr, BigDecimal ji,
+                                               MathContext mc) {
+        BigDecimal cx = minR.add(scaleX.multiply(new BigDecimal(px), mc), mc);
+        BigDecimal cy = minI.add(scaleY.multiply(new BigDecimal(py), mc), mc);
+        int iter;
+        if (isJulia) {
+            iter = FractalType.iterateJuliaBig(cx, cy, jr, ji, maxIterations, mc);
+        } else {
+            iter = type.iterateBig(cx, cy, maxIterations, mc);
+        }
+        return iter >= maxIterations;
     }
 
     /**
