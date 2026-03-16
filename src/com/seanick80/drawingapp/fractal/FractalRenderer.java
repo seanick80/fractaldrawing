@@ -24,10 +24,13 @@ import java.util.stream.IntStream;
  */
 public class FractalRenderer {
 
+    public enum RenderMode { AUTO, DOUBLE, BIGDECIMAL, PERTURBATION }
+
     private static final double TOLERANCE_FRACTION = 0.1;
     private static final double BIGDECIMAL_THRESHOLD = 1e-13;
 
     private FractalType type = FractalType.MANDELBROT;
+    private RenderMode renderMode = RenderMode.AUTO;
     private BigDecimal minReal = new BigDecimal("-2");
     private BigDecimal maxReal = new BigDecimal("2");
     private BigDecimal minImag = new BigDecimal("-2");
@@ -103,6 +106,9 @@ public class FractalRenderer {
         }
     }
 
+    public RenderMode getRenderMode() { return renderMode; }
+    public void setRenderMode(RenderMode mode) { this.renderMode = mode; }
+
     public IterationQuadTree getCache() { return cache; }
 
     public boolean isLastRenderBigDecimal() { return lastRenderWasBigDecimal; }
@@ -128,12 +134,31 @@ public class FractalRenderer {
      * Points inside the set (iterations == maxIterations) are colored black.
      * Auto-switches between double and BigDecimal based on zoom depth.
      */
-    public BufferedImage render(int width, int height, ColorGradient gradient) {
+    public synchronized BufferedImage render(int width, int height, ColorGradient gradient) {
         BigDecimal rangeReal = maxReal.subtract(minReal);
         BigDecimal rangeImag = maxImag.subtract(minImag);
 
-        boolean useBigDecimal = rangeReal.abs().doubleValue() < BIGDECIMAL_THRESHOLD
+        boolean useBigDecimal;
+        boolean usePerturbationOnly = false;
+        boolean useBigDecimalOnly = false;
+
+        switch (renderMode) {
+            case DOUBLE:
+                useBigDecimal = false;
+                break;
+            case BIGDECIMAL:
+                useBigDecimal = true;
+                useBigDecimalOnly = true;
+                break;
+            case PERTURBATION:
+                useBigDecimal = true;
+                usePerturbationOnly = true;
+                break;
+            default: // AUTO
+                useBigDecimal = rangeReal.abs().doubleValue() < BIGDECIMAL_THRESHOLD
                              || rangeImag.abs().doubleValue() < BIGDECIMAL_THRESHOLD;
+                break;
+        }
 
         if (useBigDecimal != lastRenderWasBigDecimal) {
             cache.clear();
@@ -141,6 +166,9 @@ public class FractalRenderer {
         }
 
         if (useBigDecimal) {
+            if (useBigDecimalOnly) {
+                return renderPureBigDecimal(width, height, gradient, rangeReal, rangeImag);
+            }
             return renderBigDecimal(width, height, gradient, rangeReal, rangeImag);
         } else {
             return renderDouble(width, height, gradient);
@@ -347,10 +375,92 @@ public class FractalRenderer {
     }
 
     /**
-     * Compute reference orbit for Mandelbrot at (cr, ci) using BigDecimal.
-     * Stores Z values as double for use in perturbation formula.
-     * Returns the iteration at which the orbit escapes (or maxIterations).
+     * Pure BigDecimal rendering: every pixel computed individually with BigDecimal.
+     * No perturbation theory. Used when RenderMode.BIGDECIMAL is forced.
      */
+    private BufferedImage renderPureBigDecimal(int width, int height, ColorGradient gradient,
+                                                BigDecimal rangeReal, BigDecimal rangeImag) {
+        int[] rgb = new int[width * height];
+        progressiveRgb = rgb;
+        bigDecimalCompletedRows.set(0);
+        bigDecimalTotalRows = height;
+        renderCancelled = false;
+
+        Color[] lut = gradient.toColors(maxIterations);
+
+        double zoom = 4.0 / Math.min(rangeReal.abs().doubleValue(), rangeImag.abs().doubleValue());
+        int precision = 20 + (int) Math.ceil(Math.log10(Math.max(zoom, 1)));
+        MathContext mc = new MathContext(precision, RoundingMode.HALF_UP);
+
+        BigDecimal bdAspect = new BigDecimal(width).divide(new BigDecimal(height), mc);
+        BigDecimal centerReal = minReal.add(maxReal, mc).divide(BigDecimal.valueOf(2), mc);
+        BigDecimal centerImag = minImag.add(maxImag, mc).divide(BigDecimal.valueOf(2), mc);
+
+        BigDecimal ratioRI = rangeReal.divide(rangeImag, mc);
+        BigDecimal viewReal, viewImag;
+        if (ratioRI.compareTo(bdAspect) > 0) {
+            viewReal = rangeReal;
+            viewImag = rangeReal.divide(bdAspect, mc);
+        } else {
+            viewImag = rangeImag;
+            viewReal = rangeImag.multiply(bdAspect, mc);
+        }
+
+        BigDecimal scaleX = viewReal.divide(new BigDecimal(width - 1), mc);
+        BigDecimal scaleY = viewImag.divide(new BigDecimal(height - 1), mc);
+        BigDecimal finalMinReal = centerReal.subtract(viewReal.divide(BigDecimal.valueOf(2), mc), mc);
+        BigDecimal finalMinImag = centerImag.subtract(viewImag.divide(BigDecimal.valueOf(2), mc), mc);
+
+        boolean isJulia = (type == FractalType.JULIA);
+        BigDecimal jrBig = juliaReal;
+        BigDecimal jiBig = juliaImag;
+        int black = Color.BLACK.getRGB();
+
+        int nThreads = Runtime.getRuntime().availableProcessors();
+        ExecutorService pool = Executors.newFixedThreadPool(nThreads);
+
+        for (int row = 0; row < height; row++) {
+            final int r = row;
+            pool.submit(() -> {
+                if (renderCancelled) return;
+                for (int col = 0; col < width; col++) {
+                    if (renderCancelled) return;
+                    BigDecimal cx = finalMinReal.add(scaleX.multiply(new BigDecimal(col), mc), mc);
+                    BigDecimal cy = finalMinImag.add(scaleY.multiply(new BigDecimal(r), mc), mc);
+                    int iter;
+                    if (isJulia) {
+                        iter = FractalType.iterateJuliaBig(cx, cy, jrBig, jiBig, maxIterations, mc);
+                    } else {
+                        iter = type.iterateBig(cx, cy, maxIterations, mc);
+                    }
+                    int idx = r * width + col;
+                    rgb[idx] = (iter >= maxIterations) ? black : lut[iter].getRGB();
+                }
+                bigDecimalCompletedRows.incrementAndGet();
+            });
+        }
+
+        pool.shutdown();
+        try {
+            while (!pool.isTerminated()) {
+                pool.awaitTermination(100, TimeUnit.MILLISECONDS);
+                if (renderCancelled) {
+                    pool.shutdownNow();
+                    break;
+                }
+            }
+        } catch (InterruptedException e) {
+            renderCancelled = true;
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        image.setRGB(0, 0, width, height, rgb, 0, width);
+        progressiveRgb = null;
+        return image;
+    }
+
     /**
      * Compute reference orbit for Mandelbrot at (cr, ci) using BigDecimal.
      * Always iterates to maxIterations (even past escape) so perturbation

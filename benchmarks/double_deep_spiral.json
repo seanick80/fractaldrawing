@@ -1,0 +1,10 @@
+{
+  "type": "MANDELBROT",
+  "minReal": "-0.13856524454",
+  "maxReal": "-0.13856524430",
+  "minImag": "0.64935990060",
+  "maxImag": "0.64935990078",
+  "maxIterations": 1024,
+  "juliaReal": "-0.7",
+  "juliaImag": "0.27015"
+}

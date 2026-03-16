@@ -17,21 +17,11 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class FractalTool implements Tool {
 
     private static final double INITIAL_RANGE = 4.0; // default bounds: -2 to 2
-
-    private static final ExecutorService renderExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "BigDecimalRender");
-        t.setDaemon(true);
-        return t;
-    });
 
     private final FractalRenderer renderer = new FractalRenderer();
     private ColorGradient gradient;
@@ -317,85 +307,17 @@ public class FractalTool implements Tool {
         renderStartTime = System.currentTimeMillis();
         int w = image.getWidth();
         int h = image.getHeight();
-        boolean bigDecimal = renderer.needsBigDecimal();
+        if (progressLabel != null) progressLabel.setText(" ");
 
-        if (bigDecimal) {
-            renderBigDecimalAsync(image, canvas, w, h);
-        } else {
-            if (progressLabel != null) progressLabel.setText(" ");
-            currentWorker = new SwingWorker<>() {
-                @Override
-                protected BufferedImage doInBackground() {
-                    return renderer.render(w, h, gradient);
-                }
-
-                @Override
-                protected void done() {
-                    if (isCancelled()) return;
-                    try {
-                        BufferedImage fractalImage = get();
-                        Graphics2D g = image.createGraphics();
-                        g.drawImage(fractalImage, 0, 0, null);
-                        g.dispose();
-                        canvas.repaint();
-                        updateInfoLabels();
-                    } catch (Exception ignored) {}
-                }
-            };
-            currentWorker.execute();
-        }
-    }
-
-    private void renderBigDecimalAsync(BufferedImage image, DrawingCanvas canvas, int w, int h) {
-        // Launch the blocking render() on a dedicated thread
-        CompletableFuture<BufferedImage> renderFuture = CompletableFuture.supplyAsync(
-            () -> renderer.render(w, h, gradient), renderExecutor);
-
-        currentWorker = new SwingWorker<BufferedImage, Integer>() {
+        currentWorker = new SwingWorker<>() {
             @Override
-            protected BufferedImage doInBackground() throws Exception {
-                // Poll progress until the render completes
-                while (!renderFuture.isDone() && !isCancelled()) {
-                    Thread.sleep(200);
-                    int pct = (int) (renderer.getBigDecimalProgress() * 100);
-                    publish(pct);
-                }
-                if (isCancelled()) {
-                    renderer.cancelRender();
-                    renderFuture.cancel(true);
-                    return null;
-                }
-                return renderFuture.get();
-            }
-
-            @Override
-            protected void process(List<Integer> chunks) {
-                int pct = chunks.get(chunks.size() - 1);
-                long elapsed = System.currentTimeMillis() - renderStartTime;
-                if (progressLabel != null) {
-                    progressLabel.setText(String.format("Rendering: %d%%", pct));
-                }
-                if (timeLabel != null) {
-                    timeLabel.setText(formatElapsed(elapsed));
-                }
-                // Paint partial results from the in-progress rgb array
-                int[] partialRgb = renderer.getProgressiveRgb();
-                if (partialRgb != null) {
-                    BufferedImage partial = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-                    partial.setRGB(0, 0, w, h, partialRgb, 0, w);
-                    Graphics2D g = image.createGraphics();
-                    g.drawImage(partial, 0, 0, null);
-                    g.dispose();
-                    canvas.repaint();
-                }
+            protected BufferedImage doInBackground() {
+                return renderer.render(w, h, gradient);
             }
 
             @Override
             protected void done() {
-                if (isCancelled()) {
-                    renderer.cancelRender();
-                    return;
-                }
+                if (isCancelled()) return;
                 try {
                     BufferedImage fractalImage = get();
                     if (fractalImage != null) {
@@ -404,7 +326,6 @@ public class FractalTool implements Tool {
                         g.dispose();
                         canvas.repaint();
                     }
-                    if (progressLabel != null) progressLabel.setText(" ");
                     updateInfoLabels();
                 } catch (Exception ignored) {}
             }
