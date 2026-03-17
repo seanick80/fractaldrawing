@@ -16,5 +16,6 @@ echo "Build successful."
 
 if [ "$1" = "run" ]; then
     echo "Starting Drawing App..."
-    java -cp "$OUT" com.seanick80.drawingapp.DrawingApp
+    GRADIENT_DIR="$SRC/com/seanick80/drawingapp/gradient/defaults"
+    java -cp "$OUT" com.seanick80.drawingapp.DrawingApp --gradient-dir "$GRADIENT_DIR"
 fi

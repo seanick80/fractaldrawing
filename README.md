@@ -2,6 +2,8 @@
 
 A Java Swing drawing application with an integrated fractal explorer featuring arbitrary-precision deep zoom with perturbation theory optimization.
 
+![Drawing App — Mandelbrot fractal with gradient editor](fractaldrawing.png)
+
 ## Features
 
 ### Drawing Tools
