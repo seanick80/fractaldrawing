@@ -150,7 +150,7 @@ public class DrawingApp extends JFrame {
         ButtonGroup typeGroup = new ButtonGroup();
         boolean first = true;
         for (FractalType ft : FractalTypeRegistry.getDefault().getAll()) {
-            String displayName = ft.name().substring(0, 1) + ft.name().substring(1).toLowerCase();
+            String displayName = formatTypeName(ft.name());
             JRadioButtonMenuItem item = new JRadioButtonMenuItem(displayName, first);
             first = false;
             typeGroup.add(item);
@@ -227,6 +227,16 @@ public class DrawingApp extends JFrame {
         menu.add(presetsMenu);
 
         return menu;
+    }
+
+    private static String formatTypeName(String registryName) {
+        String[] parts = registryName.split("_");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(part.substring(0, 1)).append(part.substring(1).toLowerCase());
+        }
+        return sb.toString();
     }
 
     private void addPreset(JMenu menu, String name, FractalType type,

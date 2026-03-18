@@ -1,0 +1,45 @@
+package com.seanick80.drawingapp.fractal;
+
+import java.math.BigDecimal;
+import java.math.MathContext;
+
+/**
+ * Tricorn (Mandelbar) fractal: z_{n+1} = conj(z_n)^2 + c, starting at z_0 = 0.
+ * Uses the complex conjugate: conj(z) = (zr, -zi), so squaring gives
+ * (zr^2 - zi^2, -2*zr*zi) instead of (zr^2 - zi^2, 2*zr*zi).
+ */
+public final class TricornType implements FractalType {
+
+    @Override public String name() { return "TRICORN"; }
+
+    @Override
+    public int iterate(double cx, double cy, int maxIter) {
+        double zr = 0, zi = 0;
+        for (int i = 0; i < maxIter; i++) {
+            double zr2 = zr * zr, zi2 = zi * zi;
+            if (zr2 + zi2 > 4.0) return i;
+            double newZr = zr2 - zi2 + cx;
+            zi = -2 * zr * zi + cy;
+            zr = newZr;
+        }
+        return maxIter;
+    }
+
+    @Override
+    public int iterateBig(BigDecimal cx, BigDecimal cy, int maxIter, MathContext mc) {
+        BigDecimal zr = BigDecimal.ZERO, zi = BigDecimal.ZERO;
+        BigDecimal four = BigDecimal.valueOf(4);
+        BigDecimal two = BigDecimal.valueOf(2);
+        for (int i = 0; i < maxIter; i++) {
+            BigDecimal zr2 = zr.multiply(zr, mc);
+            BigDecimal zi2 = zi.multiply(zi, mc);
+            if (zr2.add(zi2, mc).compareTo(four) > 0) return i;
+            BigDecimal newZr = zr2.subtract(zi2, mc).add(cx, mc);
+            zi = two.multiply(zr, mc).multiply(zi, mc).negate().add(cy, mc);
+            zr = newZr;
+        }
+        return maxIter;
+    }
+
+    @Override public String toString() { return name(); }
+}

@@ -190,7 +190,7 @@ public class FractalRenderer {
             }
 
             if (useBigDecimal) {
-                if (useBigDecimalOnly) {
+                if (useBigDecimalOnly || !type.supportsPerturbation()) {
                     return renderPureBigDecimal(width, height, gradient, rangeReal, rangeImag);
                 }
                 return renderBigDecimal(width, height, gradient, rangeReal, rangeImag);

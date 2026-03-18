@@ -61,15 +61,21 @@ public class FractalTool implements Tool {
         typeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(typeLabel);
 
-        String[] typeNames = FractalTypeRegistry.getDefault().getNames()
-                .stream().map(n -> n.substring(0, 1) + n.substring(1).toLowerCase())
-                .toArray(String[]::new);
+        String[] typeNames = FractalTypeRegistry.getDefault().getNames().toArray(new String[0]);
         typeCombo = new JComboBox<>(typeNames);
-        typeCombo.setMaximumSize(new Dimension(120, 28));
+        typeCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value,
+                    int index, boolean sel, boolean focus) {
+                super.getListCellRendererComponent(list, value, index, sel, focus);
+                setText(displayName((String) value));
+                return this;
+            }
+        });
+        typeCombo.setMaximumSize(new Dimension(140, 28));
         typeCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
         typeCombo.addActionListener(e -> {
-            FractalType selected = FractalType.valueOf(
-                ((String) typeCombo.getSelectedItem()).toUpperCase());
+            FractalType selected = FractalType.valueOf((String) typeCombo.getSelectedItem());
             if (selected != null) renderer.setType(selected);
             renderer.setBounds(-2, 2, -2, 2);
             updateInfoLabels();
@@ -451,8 +457,7 @@ public class FractalTool implements Tool {
             if (type == null) type = FractalType.MANDELBROT;
             renderer.setType(type);
             if (typeCombo != null) {
-                String displayName = typeName.substring(0, 1) + typeName.substring(1).toLowerCase();
-                typeCombo.setSelectedItem(displayName);
+                typeCombo.setSelectedItem(typeName);
             }
 
             BigDecimal minR = new BigDecimal(data.get("minReal"));
@@ -489,6 +494,18 @@ public class FractalTool implements Tool {
         JFileChooser fc = new JFileChooser(lastDirectory != null ? lastDirectory : new File("."));
         fc.setFileFilter(new FileNameExtensionFilter("Fractal Location (*.json)", "json"));
         return fc;
+    }
+
+    /** Convert registry name like "BURNING_SHIP" to display name "Burning Ship". */
+    private static String displayName(String registryName) {
+        if (registryName == null) return "";
+        String[] parts = registryName.split("_");
+        StringBuilder sb = new StringBuilder();
+        for (String part : parts) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(part.substring(0, 1)).append(part.substring(1).toLowerCase());
+        }
+        return sb.toString();
     }
 
     private static Map<String, String> parseJson(String json) {

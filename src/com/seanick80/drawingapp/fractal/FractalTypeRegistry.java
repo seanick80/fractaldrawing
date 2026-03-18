@@ -15,6 +15,9 @@ public class FractalTypeRegistry {
     static {
         DEFAULT.register(FractalType.MANDELBROT);
         DEFAULT.register(FractalType.JULIA);
+        DEFAULT.register(new BurningShipType());
+        DEFAULT.register(new TricornType());
+        DEFAULT.register(new MagnetTypeIType());
     }
 
     private final Map<String, FractalType> types = new LinkedHashMap<>();

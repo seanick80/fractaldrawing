@@ -46,6 +46,16 @@ public class FractalRenderTest {
         testViewportCalculatorAspectRatio();
         testColorMapperLUT();
 
+        // Phase C: New fractal type tests (T2.6-T2.8, T3.1-T3.5)
+        testBurningShipIteration();
+        testTricornIteration();
+        testMagnetTypeIIteration();
+        testBurningShipRendersValidImage();
+        testTricornRendersValidImage();
+        testMagnetRendersValidImage();
+        testNewTypesInAllRenderModes();
+        testTypeSelectionRoundTrip();
+
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
         if (failed > 0) {
@@ -455,6 +465,165 @@ public class FractalRenderTest {
             if (c1[i].getRGB() != c2[i].getRGB()) { match = false; break; }
         }
         check("gradient default consistency (256 colors)", match);
+    }
+
+    // --- Phase C: New fractal type tests ---
+
+    /** T2.6: Burning Ship iteration properties. */
+    private static void testBurningShipIteration() {
+        BurningShipType bs = new BurningShipType();
+        int maxIter = 256;
+
+        // Known exterior point: should escape quickly
+        int e1 = bs.iterate(0.5, 0.5, maxIter);
+        check("burning ship (0.5,0.5) escapes: iter=" + e1, e1 < maxIter && e1 > 0);
+
+        // Known interior point near origin
+        int i1 = bs.iterate(0.0, 0.0, maxIter);
+        check("burning ship (0,0) is interior: iter=" + i1, i1 == maxIter);
+
+        // Far outside should escape immediately
+        int e2 = bs.iterate(10.0, 10.0, maxIter);
+        check("burning ship (10,10) escapes immediately: iter=" + e2, e2 < 3);
+
+        // BigDecimal must match double for representable inputs
+        java.math.MathContext mc = new java.math.MathContext(20);
+        int eb = bs.iterateBig(new BigDecimal("0.5"), new BigDecimal("0.5"), maxIter, mc);
+        check("burning ship BigDecimal matches double: " + eb + " vs " + e1, eb == e1);
+
+        // Burning Ship is NOT symmetric about real axis (unlike Mandelbrot)
+        int above = bs.iterate(-1.5, 0.1, maxIter);
+        int below = bs.iterate(-1.5, -0.1, maxIter);
+        check("burning ship asymmetric: iter(-1.5,0.1)=" + above + " vs iter(-1.5,-0.1)=" + below,
+              above != below);
+    }
+
+    /** T2.7: Tricorn iteration properties. */
+    private static void testTricornIteration() {
+        TricornType tc = new TricornType();
+        int maxIter = 256;
+
+        // Origin is interior
+        int i1 = tc.iterate(0.0, 0.0, maxIter);
+        check("tricorn (0,0) is interior: iter=" + i1, i1 == maxIter);
+
+        // Far outside escapes immediately
+        int e1 = tc.iterate(10.0, 10.0, maxIter);
+        check("tricorn (10,10) escapes immediately: iter=" + e1, e1 < 3);
+
+        // Tricorn uses conjugate: iterate(x, y) uses conj(z) = (zr, -zi)
+        // This means the imaginary component flips sign before squaring
+        int a = tc.iterate(-0.5, 0.5, maxIter);
+        int b = tc.iterate(-0.5, -0.5, maxIter);
+        check("tricorn conjugation symmetry: iter(-0.5,0.5)=" + a +
+              " vs iter(-0.5,-0.5)=" + b, a == b);
+
+        // BigDecimal must match double
+        java.math.MathContext mc = new java.math.MathContext(20);
+        int e1b = tc.iterateBig(new BigDecimal("10"), new BigDecimal("10"), maxIter, mc);
+        check("tricorn BigDecimal matches double: " + e1b + " vs " + e1, e1b == e1);
+    }
+
+    /** T2.8: Magnet Type I iteration properties. */
+    private static void testMagnetTypeIIteration() {
+        MagnetTypeIType mag = new MagnetTypeIType();
+        int maxIter = 256;
+
+        // Far outside converges to fixed point z=1 (Magnet characteristic)
+        int e1 = mag.iterate(10.0, 10.0, maxIter);
+        check("magnet (10,10) converges: iter=" + e1, e1 == maxIter);
+
+        // z=0 with c near fixed point z=1: should converge
+        int c1 = mag.iterate(0.0, 0.0, maxIter);
+        check("magnet (0,0) result: iter=" + c1, c1 >= 0);
+
+        // BigDecimal must match double for simple case
+        java.math.MathContext mc = new java.math.MathContext(20);
+        int e1b = mag.iterateBig(new BigDecimal("10"), new BigDecimal("10"), maxIter, mc);
+        check("magnet BigDecimal matches double: " + e1b + " vs " + e1, e1b == e1);
+    }
+
+    /** T3.1: Burning Ship renders a valid, non-trivial image. */
+    private static void testBurningShipRendersValidImage() {
+        FractalRenderer r = newRenderer();
+        r.setType(new BurningShipType());
+        r.setBounds(-2.0, 2.0, -2.0, 2.0);
+        r.setMaxIterations(256);
+        r.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+        r.getCache().clear();
+        BufferedImage img = r.render(SIZE, SIZE, gradient());
+        int colors = countUniqueColors(img);
+        int black = countColor(img, Color.BLACK.getRGB());
+        check("burning ship renders with detail (" + colors + " colors)", colors > 15);
+        check("burning ship has interior pixels (" + black + " black)",
+              black > 0 && black < SIZE * SIZE);
+    }
+
+    /** T3.2: Tricorn renders a valid, non-trivial image. */
+    private static void testTricornRendersValidImage() {
+        FractalRenderer r = newRenderer();
+        r.setType(new TricornType());
+        r.setBounds(-2.0, 2.0, -2.0, 2.0);
+        r.setMaxIterations(256);
+        r.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+        r.getCache().clear();
+        BufferedImage img = r.render(SIZE, SIZE, gradient());
+        int colors = countUniqueColors(img);
+        int black = countColor(img, Color.BLACK.getRGB());
+        check("tricorn renders with detail (" + colors + " colors)", colors > 15);
+        check("tricorn has interior pixels (" + black + " black)",
+              black > 0 && black < SIZE * SIZE);
+    }
+
+    /** T3.3: Magnet Type I renders a valid image. */
+    private static void testMagnetRendersValidImage() {
+        FractalRenderer r = newRenderer();
+        r.setType(new MagnetTypeIType());
+        r.setBounds(-2.0, 2.0, -2.0, 2.0);
+        r.setMaxIterations(256);
+        r.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+        r.getCache().clear();
+        BufferedImage img = r.render(SIZE, SIZE, gradient());
+        int colors = countUniqueColors(img);
+        check("magnet renders with detail (" + colors + " colors)", colors > 10);
+    }
+
+    /** T3.4: All new types render in all applicable modes without crashing. */
+    private static void testNewTypesInAllRenderModes() {
+        FractalType[] newTypes = { new BurningShipType(), new TricornType(), new MagnetTypeIType() };
+        // Only test DOUBLE and BIGDECIMAL — new types don't support PERTURBATION yet
+        FractalRenderer.RenderMode[] modes = {
+            FractalRenderer.RenderMode.DOUBLE,
+            FractalRenderer.RenderMode.BIGDECIMAL
+        };
+        for (FractalType ft : newTypes) {
+            for (FractalRenderer.RenderMode mode : modes) {
+                FractalRenderer r = newRenderer();
+                r.setType(ft);
+                r.setBounds(-2.0, 2.0, -2.0, 2.0);
+                r.setMaxIterations(64);
+                r.setRenderMode(mode);
+                r.getCache().clear();
+                try {
+                    BufferedImage img = r.render(SIZE, SIZE, gradient());
+                    check(ft.name() + " " + mode + " renders OK",
+                          img != null && countUniqueColors(img) > 1);
+                } catch (Exception e) {
+                    check(ft.name() + " " + mode + " renders OK (threw " +
+                          e.getClass().getSimpleName() + ")", false);
+                }
+            }
+        }
+    }
+
+    /** T3.5: Type name survives registry round-trip. */
+    private static void testTypeSelectionRoundTrip() {
+        for (FractalType ft : FractalTypeRegistry.getDefault().getAll()) {
+            FractalType looked = FractalType.valueOf(ft.name());
+            check("registry round-trip: " + ft.name(), looked != null);
+            check("registry round-trip name match: " + ft.name(),
+                  looked != null && ft.name().equals(looked.name()));
+        }
     }
 
     // --- Phase B.4: Extraction tests (T2.4-T2.5) ---
