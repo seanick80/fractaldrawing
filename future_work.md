@@ -12,18 +12,8 @@ Can we explore a quadtree based evaluation at a much lower resolution, and only 
 ## Precalculating individual pixel lat, long values.
  One big chunk of time spent per iteration is to map a pixel to it’s real and imaginary coordinates.If you calculate the real axis and the imaginary axis of the current viewport once, then pass those values in to each cell worker, you’re saving 2-4 orders of magnitude of calculation on just that one value.
 
-## Add Percent complete status back
-This particular location is really quite slow. Would love to know what it’s doing.
-{
-  "type": "MANDELBROT",
-  "minReal": "-1.25015600357202160012093372643103594",
-  "maxReal": "-1.25015600357202069062623195350279806",
-  "minImag": "0.00967906445708459917854086823385124937",
-  "maxImag": "0.00967906445708550867324264116208916425",
-  "maxIterations": 556,
-  "juliaReal": "-0.7",
-  "juliaImag": "0.27015"
-}
+## ~~Add Percent complete status back~~ DONE (2026-03-18)
+Implemented via SwingTimer polling every 200ms. Shows percentage, row count, elapsed time, and ETA.
 
 
 ## Features I’d like to explore when we have more time:
@@ -35,13 +25,10 @@ This particular location is really quite slow. Would love to know what it’s do
 My previous version of this app had these features as selectable animations, as a screen saver.
 
 
-## Different fractal types
-Currently the dropdown only offers Mandelbrot and Julia. We'd like to add more fractal types as selectable options:
+## ~~Different fractal types~~ DONE (2026-03-18, escape-time types)
+Burning Ship, Tricorn, and Magnet Type I are implemented and auto-populate UI via FractalTypeRegistry. Types without perturbation support fall back to pure BigDecimal for deep zoom.
 
-### Escape-time fractals (complex plane)
-- **Burning Ship** — uses `abs(zr)` and `abs(zi)` before squaring, producing an asymmetric ship-like shape
-- **Magnet (Type I & II)** — derived from magnetic renormalization-group equations; rational iteration formulas with both z² and z terms
-- **Tricorn (Mandelbar)** — uses the conjugate of z (negated imaginary part) each iteration
+### Remaining fractal types (not yet implemented)
 
 ### 3D fractals (would require a new rendering pipeline)
 - **Mandelbulb** — 3D extension of the Mandelbrot set using spherical coordinates and a power parameter
@@ -54,10 +41,11 @@ These don't use escape-time iteration — they build geometry via recursive subd
 - **Koch Snowflake** — recursively replaces each line segment's middle third with an equilateral triangle bump
 
 ### Implementation notes
-- Escape-time types (Burning Ship, Magnet, Tricorn) fit naturally into the existing `FractalType` enum — just add new `iterate()` / `iterateBig()` implementations
+- Escape-time types now use the `FractalType` interface + `FractalTypeRegistry` pattern — implement interface, register, auto-appears in UI
+- Perturbation strategies for Burning Ship/Tricorn are a future optimization (currently fall back to BigDecimal at deep zoom)
+- Magnet Type II would follow the same pattern as Type I
 - IFS fractals need a different renderer since they don't map pixels to escape counts — probably a recursive geometry builder that draws to the canvas directly
 - 3D fractals (Mandelbulb, Mandelbox) would need ray-marching or distance-estimation rendering, which is a larger undertaking
-- All types should appear in the fractal type dropdown so the user can select them
 
 
 ##  Random location explorer

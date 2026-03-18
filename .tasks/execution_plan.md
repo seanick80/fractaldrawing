@@ -667,14 +667,27 @@ Phase E can run at any point — it has no dependencies on Phases A-D and doesn'
 
 ---
 
-## Sequencing Summary
+## Completion Status (updated 2026-03-18)
 
 ```
-Phase E (cleanup)   ██░░░░░░░░░░░░░░░░░░  — Remove stale files, gitignore rules (independent)
-Phase A (tests)     ░░████░░░░░░░░░░░░░░  — Regression baselines
-Phase B (refactor)  ░░░░░░████████░░░░░░  — 5 sub-phases, each tested + committed
-Phase C (implement) ░░░░░░░░░░░░░░████░░  — 3 new types + integration tests
-Phase D (progress)  ░░░░░░░░░░░░░░░░░░██  — Wire existing infra to UI
+Phase E (cleanup)   ████████████████████  DONE — d312a57 (stale files, gitignore)
+Phase A (tests)     ████████████████████  DONE — 6dd44d5 (golden tests, baseline)
+Phase B (refactor)  ████████████████████  DONE — 5 commits (B.1-B.5)
+Phase C (implement) ████████████████████  DONE — a121504 (3 new types, 89 tests)
+Phase D (progress)  ████████████████████  DONE — 13aebdb (progress timer + ETA)
 ```
 
-Each phase boundary is a commit point with all tests green.
+All phases complete. 89/89 tests passing. All pushed to origin/master.
+
+### Skipped items (deferred, not forgotten)
+- **B.2/B.3 benchmark gates** — benchmarks were not re-run after each refactoring sub-phase. Should run full benchmark suite and compare to baseline before any further perf work.
+- **D.2 — Double-precision progress tracking** — Progress polling only works for BigDecimal/perturbation modes (which use row-based AtomicInteger tracking). Double mode uses IntStream.parallel() which doesn't increment a counter. Low priority since double renders are fast.
+- **C.4 — Post-implementation polymorphic dispatch benchmark** — Should verify that adding 5 FractalType implementations doesn't regress JIT performance on Mandelbrot/Julia via polymorphic call site overhead.
+
+### Next priorities (not yet planned in detail)
+1. Performance work: memory hygiene, pre-calculated pixel coordinates, interior pruning improvements
+2. Perturbation strategies for new types (Burning Ship, Tricorn)
+3. Custom FixedPrecisionFloat library (if BigDecimal profiling warrants it)
+4. IFS fractals (Sierpinski, Koch — requires new rendering paradigm)
+5. Animations (iteration, zoom, palette cycle)
+6. Random location explorer
