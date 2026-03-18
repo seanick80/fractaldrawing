@@ -3,6 +3,7 @@ package com.seanick80.drawingapp.tools;
 import com.seanick80.drawingapp.DrawingCanvas;
 import com.seanick80.drawingapp.fractal.FractalRenderer;
 import com.seanick80.drawingapp.fractal.FractalType;
+import com.seanick80.drawingapp.fractal.FractalTypeRegistry;
 import com.seanick80.drawingapp.gradient.ColorGradient;
 import com.seanick80.drawingapp.gradient.GradientEditorDialog;
 
@@ -60,7 +61,10 @@ public class FractalTool implements Tool {
         typeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(typeLabel);
 
-        typeCombo = new JComboBox<>(new String[]{"Mandelbrot", "Julia"});
+        String[] typeNames = FractalTypeRegistry.getDefault().getNames()
+                .stream().map(n -> n.substring(0, 1) + n.substring(1).toLowerCase())
+                .toArray(String[]::new);
+        typeCombo = new JComboBox<>(typeNames);
         typeCombo.setMaximumSize(new Dimension(120, 28));
         typeCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
         typeCombo.addActionListener(e -> {

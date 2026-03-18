@@ -3,6 +3,7 @@ package com.seanick80.drawingapp;
 import com.seanick80.drawingapp.fills.*;
 import com.seanick80.drawingapp.fractal.FractalRenderer;
 import com.seanick80.drawingapp.fractal.FractalType;
+import com.seanick80.drawingapp.fractal.FractalTypeRegistry;
 import com.seanick80.drawingapp.tools.*;
 
 import javax.swing.*;
@@ -144,25 +145,21 @@ public class DrawingApp extends JFrame {
         JMenu menu = new JMenu("Fractal");
         menu.setMnemonic('R');
 
-        // --- Fractal Type ---
+        // --- Fractal Type (dynamically populated from registry) ---
         JMenu typeMenu = new JMenu("Type");
         ButtonGroup typeGroup = new ButtonGroup();
-        JRadioButtonMenuItem mandelbrotItem = new JRadioButtonMenuItem("Mandelbrot", true);
-        JRadioButtonMenuItem juliaItem = new JRadioButtonMenuItem("Julia");
-        typeGroup.add(mandelbrotItem);
-        typeGroup.add(juliaItem);
-
-        mandelbrotItem.addActionListener(e -> applyFractalAndRender(ft -> {
-            ft.getRenderer().setType(FractalType.MANDELBROT);
-            ft.getRenderer().setBounds(-2, 2, -2, 2);
-        }));
-        juliaItem.addActionListener(e -> applyFractalAndRender(ft -> {
-            ft.getRenderer().setType(FractalType.JULIA);
-            ft.getRenderer().setBounds(-2, 2, -2, 2);
-        }));
-
-        typeMenu.add(mandelbrotItem);
-        typeMenu.add(juliaItem);
+        boolean first = true;
+        for (FractalType ft : FractalTypeRegistry.getDefault().getAll()) {
+            String displayName = ft.name().substring(0, 1) + ft.name().substring(1).toLowerCase();
+            JRadioButtonMenuItem item = new JRadioButtonMenuItem(displayName, first);
+            first = false;
+            typeGroup.add(item);
+            item.addActionListener(e -> applyFractalAndRender(tool -> {
+                tool.getRenderer().setType(ft);
+                tool.getRenderer().setBounds(-2, 2, -2, 2);
+            }));
+            typeMenu.add(item);
+        }
         menu.add(typeMenu);
 
         // --- Color Mode ---
