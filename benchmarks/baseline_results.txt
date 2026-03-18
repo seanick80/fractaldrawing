@@ -1,0 +1,46 @@
+Baseline Performance Results (Pre-Refactoring)
+================================================
+Date: 2026-03-18
+Commit: d312a57
+Java: OpenJDK 21.0.10 (2026-01-20 LTS)
+Render size: 400x300, 1 warmup, 3 runs
+
+=== bigdecimal_location ===
+Type: MANDELBROT | Iterations: 456 | Zoom: 4.16e+13 | Deep: yes
+  PERTURBATION:  Min: 2.23s  Max: 4.88s  Avg: 3.90s  (30,782 px/s)
+  BIGDECIMAL:    Min: 15.48s Max: 15.78s Avg: 15.63s (7,678 px/s)
+  DOUBLE:        Min: 50ms   Max: 63ms   Avg: 54ms   (2,208,589 px/s)
+
+=== deeper_location ===
+Type: MANDELBROT | Iterations: 706 | Zoom: 3.41e+17 | Deep: yes
+  PERTURBATION:  Min: 5.91s  Max: 6.19s  Avg: 6.02s  (19,932 px/s)
+  BIGDECIMAL:    Min: 18.99s Max: 19.61s Avg: 19.35s (6,203 px/s)
+  DOUBLE:        Min: 48ms   Max: 63ms   Avg: 56ms   (2,130,178 px/s)
+
+=== double_deep_spiral ===
+Type: MANDELBROT | Iterations: 1024 | Zoom: 2.22e+10 | Deep: no
+  DOUBLE:        Min: 76ms   Max: 84ms   Avg: 81ms   (1,481,481 px/s)
+
+=== double_mini_mandelbrot ===
+Type: MANDELBROT | Iterations: 512 | Zoom: 8.00e+02 | Deep: no
+  DOUBLE:        Min: 43ms   Max: 44ms   Avg: 43ms   (2,748,092 px/s)
+
+=== double_seahorse ===
+Type: MANDELBROT | Iterations: 256 | Zoom: 3.15e+02 | Deep: no
+  DOUBLE:        Min: 30ms   Max: 31ms   Avg: 30ms   (3,913,043 px/s)
+
+=== fractal_zoomed_5 ===
+Type: MANDELBROT | Iterations: 506 | Zoom: 2.73e+18 | Deep: yes
+  PERTURBATION:  Min: 1.39s  Max: 1.43s  Avg: 1.41s  (85,026 px/s)
+  BIGDECIMAL:    Min: 19.45s Max: 20.44s Avg: 20.09s (5,974 px/s)
+  DOUBLE:        Min: 56ms   Max: 58ms   Avg: 56ms   (2,117,647 px/s)
+
+=== perturbation_error ===
+Type: MANDELBROT | Iterations: 256 | Zoom: 4.50e+15 | Deep: yes
+  PERTURBATION:  Min: 5.23s  Max: 5.52s  Avg: 5.34s  (22,456 px/s)
+  BIGDECIMAL:    Min: 10.67s Max: 4m34.5s Avg: 1m38.7s (1,216 px/s) *GC spike on run 3*
+  DOUBLE:        Min: 67ms   Max: 105ms  Avg: 86ms   (1,389,961 px/s)
+
+NOTE: perturbation_error BigDecimal run 3 experienced a ~27x spike (4m34s vs ~10s),
+likely due to GC pressure from BigDecimal allocation churn. This validates the
+FixedPrecisionFloat investigation documented in the execution plan.
