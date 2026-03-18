@@ -244,22 +244,29 @@ T3.5  testTypeSelectionRoundTrip
 
 ## Execution Plan
 
-### Phase A: Test Foundation (T1 tests)
-**Goal:** Establish regression baselines before any code changes
+### Phase A: Test Foundation & Performance Baseline
+**Goal:** Establish regression baselines (correctness AND performance) before any code changes
 
-1. **A.1** Add golden-value tests to `FractalRenderTest.java`:
+1. **A.0** Capture performance baseline:
+   - Build the project
+   - Run `FractalBenchmark benchmarks/ 400 300 1 3`
+   - Save output to `benchmarks/baseline_results.txt`
+   - Create `benchmarks/regression_log.md` with baseline table
+   - Commit baseline results
+
+2. **A.1** Add golden-value tests to `FractalRenderTest.java`:
    - T1.1 through T1.4 (rendering checksums)
    - T1.5 (iteration count pinning)
    - T1.6 (color mapping)
    - T1.7 (quadtree cache contract)
 
-2. **A.2** Add utility tests:
+3. **A.2** Add utility tests:
    - T1.8 (JSON parse round-trip)
    - T1.9 (gradient default consistency)
 
-3. **A.3** Run full test suite, verify all pass. Commit as baseline.
+4. **A.3** Run full test suite, verify all pass. Commit as baseline.
 
-**Deliverable:** All T1 tests green. This is the regression safety net.
+**Deliverable:** All T1 tests green + performance baseline recorded. This is the regression safety net.
 
 ---
 
@@ -270,7 +277,8 @@ T3.5  testTypeSelectionRoundTrip
 2. Add `ColorGradient.fractalDefault()` static factory
 3. Update `FractalTool`, `FractalRenderTest`, `FractalBenchmark`, `PerturbationEval` to use shared versions
 4. Run all tests → must pass identically
-5. Commit
+5. Run benchmark → append to regression_log.md (expect 0% delta)
+6. Commit
 
 **B.2 — Extract FractalType interface (R1)**
 1. Create `FractalType.java` as interface (rename old enum file)
@@ -283,7 +291,8 @@ T3.5  testTypeSelectionRoundTrip
    - Remove all `isJulia` branching in BigDecimal paths — call `type.iterateBig()` uniformly
 6. Add T2.1, T2.2 tests
 7. Run all tests (T1 + T2) → must pass
-8. Commit
+8. Run benchmark → append to regression_log.md (≤5% acceptable; document recovery if >0%)
+9. Commit
 
 **B.3 — Extract PerturbationStrategy (R2)**
 1. Create `PerturbationStrategy.java` interface
@@ -295,7 +304,9 @@ T3.5  testTypeSelectionRoundTrip
    - Otherwise delegate reference orbit + perturbation to strategy
 5. Add T2.3 tests
 6. Run all tests → must pass (especially T1.3 perturbation golden)
-7. Commit
+7. Run benchmark (PERTURBATION + BIGDECIMAL modes) → append to regression_log.md (≤5%; this is the highest-risk phase for perf)
+8. If regression >5%: STOP. Profile, identify cause, apply recovery before committing.
+9. Commit
 
 **B.4 — Extract ViewportCalculator and ColorMapper (R3 partial)**
 1. Create `ViewportCalculator.java` — shared viewport math
@@ -303,7 +314,9 @@ T3.5  testTypeSelectionRoundTrip
 3. Simplify `FractalRenderer` to use extracted classes
 4. Add T2.4, T2.5 tests
 5. Run all tests → must pass
-6. Commit
+6. Run benchmark → append to regression_log.md (expect 0% delta; these are per-render, not per-pixel)
+7. Also: if B.2 or B.3 logged a recovery plan targeting this phase, execute the recovery now and verify improvement
+8. Commit
 
 **B.5 — Dynamic UI population (R5)**
 1. Update `FractalTool.createSettingsPanel()`:
@@ -352,8 +365,10 @@ T3.5  testTypeSelectionRoundTrip
 **C.4 — Integration verification**
 1. Run T3.4 (all types × all modes)
 2. Run T3.5 (serialization round-trip)
-3. Manual smoke test: launch app, verify dropdown shows all 5 types
-4. Commit
+3. Run benchmark on Mandelbrot + Julia locations ONLY → must show 0% regression vs baseline (new types must not pollute existing type performance via polymorphic dispatch)
+4. If JIT polymorphic dispatch regression detected: switch to type-specific render path selection at render start (see Risk Mitigation #4)
+5. Manual smoke test: launch app, verify dropdown shows all 5 types
+6. Commit
 
 ---
 
@@ -420,11 +435,84 @@ T3.5  testTypeSelectionRoundTrip
 
 ---
 
+## Performance Regression Policy
+
+**KEY REQUIREMENT:** No refactoring phase may introduce a permanent performance regression. Any temporary regression must be documented with a concrete path to recovery.
+
+### Benchmark Protocol
+
+The existing `FractalBenchmark` CLI tool and the 6 benchmark locations in `benchmarks/` are the performance authority. The benchmark covers 3 render modes (DOUBLE, PERTURBATION, BIGDECIMAL) across shallow and deep zoom locations.
+
+**Baseline capture (Phase A, step A.0 — before any code changes):**
+
+1. Run `FractalBenchmark` against all locations in `benchmarks/` directory at 400x300, 1 warmup, 3 runs
+2. Record results to `benchmarks/baseline_results.txt` with:
+   - Per-location, per-mode: min/max/avg ms, px/s
+   - System info (Java version, CPU core count)
+   - Git commit hash (pre-refactoring baseline)
+3. This file is committed and becomes the reference for all subsequent phases
+
+**Per-phase benchmark gates:**
+
+| Phase | What to benchmark | Acceptable regression | Recovery path required if exceeded |
+|-------|-------------------|----------------------|-----------------------------------|
+| B.1 (dedup utilities) | Full suite | 0% — pure code motion, no hot-path changes | N/A — should be zero-cost |
+| B.2 (FractalType interface) | Full suite | ≤5% — interface dispatch vs enum may add virtual call overhead | Document: can recover with `final` classes or profile-guided inlining; JIT typically eliminates within warmup |
+| B.3 (PerturbationStrategy) | PERTURBATION + BIGDECIMAL modes | ≤5% — strategy delegation adds one indirection in the inner loop | Document: if >5%, inline the strategy call or use a method handle. The perturbation inner loop is called O(maxIter × pixels) times so even small overhead compounds |
+| B.4 (ViewportCalculator/ColorMapper) | Full suite | 0% — extracted code runs once per render, not per pixel | N/A — should be zero-cost |
+| B.5 (dynamic UI) | N/A — no render path changes | N/A | N/A |
+| C.1-C.3 (new types) | Mandelbrot + Julia only (existing types must not regress) | 0% — new types don't touch existing iteration code | N/A |
+| D (progress indicator) | Full suite | ≤2% — progress polling adds atomic increment per row | Document: if >2%, reduce polling frequency or use volatile counter instead of AtomicInteger |
+
+**How to run benchmarks at each gate:**
+
+```bash
+# From project root, after build:
+java -cp out com.seanick80.drawingapp.fractal.FractalBenchmark benchmarks/ 400 300 1 3
+```
+
+**What to record at each gate:**
+
+After each phase's benchmark run, append results to `benchmarks/regression_log.md`:
+
+```markdown
+## Phase B.2 — FractalType Interface Extraction
+**Commit:** <hash>
+**Date:** <date>
+
+| Location | Mode | Baseline avg | Current avg | Delta | Status |
+|----------|------|-------------|-------------|-------|--------|
+| bigdecimal_location | PERTURBATION | 4200ms | 4350ms | +3.6% | ACCEPTABLE |
+| ... | ... | ... | ... | ... | ... |
+
+**Regression notes:** (if any delta > 0%)
+- Cause: virtual dispatch on iterate() adds ~150ns per call, visible at 456 iterations × 120000 pixels
+- Recovery plan: Mark MandelbrotType as final. If insufficient, add @ForceInline hint or extract hot loop to avoid interface dispatch.
+- Recovery deadline: Phase B.4 (viewport extraction is a natural point to also optimize iteration dispatch)
+```
+
+**Hard stop rule:** If any phase exceeds its acceptable regression threshold AND the implementer cannot articulate a specific, actionable recovery plan with a target phase, that phase must be reworked before proceeding. Do not accumulate unplanned regressions.
+
+### Performance-Sensitive Hot Paths
+
+These are the code paths where abstraction overhead matters most, ordered by call frequency:
+
+1. **`FractalType.iterate()`** — called `width × height × (1 - cacheHitRate)` times per render. At 400×300 with 50% cache hits, that's 60,000 calls. Each call runs `maxIterations` loop iterations internally. Interface dispatch overhead here is dwarfed by the loop body, but measure to confirm.
+
+2. **`perturbIterate()`** — called once per non-interior pixel in PERTURBATION mode. Inner loop runs up to `refEscapeIter` iterations. This is the single most performance-critical method. Strategy pattern adds one level of indirection at the call site, not inside the loop — acceptable.
+
+3. **`colorForIter()`** — called once per pixel. LUT lookup is O(1). Extraction to `FractalColorMapper` should be zero-cost if the LUT array reference is passed directly.
+
+4. **Viewport math** — called once per render (not per pixel). Extraction is zero-cost.
+
+---
+
 ## Risk Mitigation
 
 1. **Perturbation correctness is the highest-risk refactoring.** The T1.3 golden test pins the exact pixel output. If B.3 changes even one pixel, we investigate before proceeding.
 2. **Julia constant ownership change** (from renderer to type) affects save/load JSON format. B.5 must handle backward compatibility: loading old JSON that has `juliaReal`/`juliaImag` at the top level.
 3. **Magnet Type I** has a different escape condition (convergence to fixed point, not divergence). The renderer's `colorForIter()` assumes higher iteration = closer to set interior. This works for Magnet too (convergence = interior), but the bailout radius check in perturbation would need adjustment. Since Magnet won't have perturbation initially, this is deferred.
+4. **Performance regression from abstraction** — mitigated by the benchmark gate protocol above. The JIT compiler typically eliminates interface dispatch overhead for monomorphic call sites (only one implementation loaded). The risk increases in Phase C when multiple FractalType implementations exist, potentially making call sites polymorphic. If benchmarks show this, the recovery is to use type-specific render paths selected once at render start rather than per-pixel dispatch.
 
 ---
 
