@@ -35,6 +35,19 @@ public class ColorGradient {
         stops.add(new Stop(1f, Color.WHITE));
     }
 
+    /** Creates the standard fractal-coloring gradient used across the application. */
+    public static ColorGradient fractalDefault() {
+        ColorGradient g = new ColorGradient();
+        g.stops.clear();
+        g.addStop(0.0f, new Color(0, 7, 100));
+        g.addStop(0.16f, new Color(32, 107, 203));
+        g.addStop(0.42f, new Color(237, 255, 255));
+        g.addStop(0.6425f, new Color(255, 170, 0));
+        g.addStop(0.8575f, new Color(200, 82, 0));
+        g.addStop(1.0f, new Color(0, 2, 0));
+        return g;
+    }
+
     public ColorGradient(ColorGradient other) {
         for (Stop s : other.stops) {
             stops.add(new Stop(s.position, s.color));
