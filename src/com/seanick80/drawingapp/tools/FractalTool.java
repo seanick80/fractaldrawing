@@ -27,6 +27,7 @@ public class FractalTool implements Tool {
     private final FractalRenderer renderer = new FractalRenderer();
     private ColorGradient gradient;
     private SwingWorker<BufferedImage, Integer> currentWorker;
+    private javax.swing.Timer progressTimer;
     private JLabel zoomLabel;
     private JLabel timeLabel;
     private JLabel centerLabel;
@@ -303,11 +304,15 @@ public class FractalTool implements Tool {
             renderer.cancelRender();
             currentWorker.cancel(true);
         }
+        stopProgressTimer();
 
         renderStartTime = System.currentTimeMillis();
         int w = image.getWidth();
         int h = image.getHeight();
-        if (progressLabel != null) progressLabel.setText(" ");
+        if (progressLabel != null) progressLabel.setText("Rendering...");
+
+        // Start progress polling timer (200ms interval)
+        startProgressTimer(w, h);
 
         currentWorker = new SwingWorker<>() {
             @Override
@@ -317,7 +322,11 @@ public class FractalTool implements Tool {
 
             @Override
             protected void done() {
-                if (isCancelled()) return;
+                stopProgressTimer();
+                if (isCancelled()) {
+                    if (progressLabel != null) progressLabel.setText("Cancelled");
+                    return;
+                }
                 try {
                     BufferedImage fractalImage = get();
                     if (fractalImage != null) {
@@ -327,10 +336,52 @@ public class FractalTool implements Tool {
                         canvas.repaint();
                     }
                     updateInfoLabels();
+                    long elapsed = System.currentTimeMillis() - renderStartTime;
+                    if (progressLabel != null) {
+                        progressLabel.setText("Done " + formatElapsedShort(elapsed));
+                    }
                 } catch (Exception ignored) {}
             }
         };
         currentWorker.execute();
+    }
+
+    private void startProgressTimer(int width, int height) {
+        progressTimer = new javax.swing.Timer(200, e -> {
+            if (progressLabel == null) return;
+            double progress = renderer.getBigDecimalProgress();
+            long elapsed = System.currentTimeMillis() - renderStartTime;
+            if (progress > 0 && progress < 1.0) {
+                int pct = (int) (progress * 100);
+                int completedRows = (int) (progress * height);
+                String eta = "";
+                if (progress > 0.05) {
+                    long remaining = (long) (elapsed / progress * (1.0 - progress));
+                    eta = " ETA " + formatElapsedShort(remaining);
+                }
+                progressLabel.setText(String.format("Rendering: %d%% (%d/%d)%s",
+                        pct, completedRows, height, eta));
+            } else if (progress <= 0) {
+                progressLabel.setText("Rendering... " + formatElapsedShort(elapsed));
+            }
+        });
+        progressTimer.start();
+    }
+
+    private void stopProgressTimer() {
+        if (progressTimer != null) {
+            progressTimer.stop();
+            progressTimer = null;
+        }
+    }
+
+    private static String formatElapsedShort(long ms) {
+        if (ms < 1000) return ms + "ms";
+        double sec = ms / 1000.0;
+        if (sec < 60) return String.format("%.1fs", sec);
+        int min = (int) (sec / 60);
+        double remSec = sec - min * 60;
+        return String.format("%dm%.0fs", min, remSec);
     }
 
     private static String formatElapsed(long ms) {
