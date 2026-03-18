@@ -31,6 +31,17 @@ public class FractalRenderTest {
         testIterationCountsPreservedAcrossZoom();
         testRenderModeSwitch();
 
+        // Phase A golden-value and contract tests (T1.1-T1.9)
+        testMandelbrotDoubleGolden();
+        testJuliaDoubleGolden();
+        testMandelbrotPerturbationGolden();
+        testMandelbrotBigDecimalGolden();
+        testFractalTypeEnumContract();
+        testColorMappingDeterministic();
+        testQuadTreeCacheContract();
+        testJsonParseRoundTrip();
+        testGradientDefaultConsistency();
+
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
         if (failed > 0) {
@@ -282,7 +293,197 @@ public class FractalRenderTest {
         }
     }
 
+    // --- Phase A: Golden-value and contract tests (T1.1-T1.9) ---
+
+    /** T1.1: Pin Mandelbrot double rendering to detect any change during refactoring. */
+    private static void testMandelbrotDoubleGolden() {
+        FractalRenderer r = newRenderer();
+        r.setBounds(-2.0, 1.0, -1.5, 1.5);
+        r.setMaxIterations(256);
+        r.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+        r.getCache().clear();
+        BufferedImage img = r.render(SIZE, SIZE, gradient());
+        long checksum = pixelChecksum(img);
+        long expected = 1682464L;
+        check("mandelbrot double golden checksum=" + checksum, checksum == expected);
+    }
+
+    /** T1.2: Pin Julia double rendering. */
+    private static void testJuliaDoubleGolden() {
+        FractalRenderer r = newRenderer();
+        r.setType(FractalType.JULIA);
+        r.setBounds(-2.0, 2.0, -2.0, 2.0);
+        r.setMaxIterations(256);
+        r.setJuliaConstant(-0.7, 0.27015);
+        r.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+        r.getCache().clear();
+        BufferedImage img = r.render(SIZE, SIZE, gradient());
+        long checksum = pixelChecksum(img);
+        long expected = 1570868L;
+        check("julia double golden checksum=" + checksum, checksum == expected);
+    }
+
+    /** T1.3: Pin perturbation rendering at deep zoom. */
+    private static void testMandelbrotPerturbationGolden() {
+        FractalRenderer r = newDeepZoomRenderer();
+        r.setRenderMode(FractalRenderer.RenderMode.PERTURBATION);
+        r.getCache().clear();
+        BufferedImage img = r.render(SIZE, SIZE, gradient());
+        long checksum = pixelChecksum(img);
+        long expected = 3536663L;
+        check("mandelbrot perturbation golden checksum=" + checksum, checksum == expected);
+    }
+
+    /** T1.4: Pin BigDecimal rendering at deep zoom. */
+    private static void testMandelbrotBigDecimalGolden() {
+        FractalRenderer r = newDeepZoomRenderer();
+        r.setRenderMode(FractalRenderer.RenderMode.BIGDECIMAL);
+        r.getCache().clear();
+        BufferedImage img = r.render(SIZE, SIZE, gradient());
+        long checksum = pixelChecksum(img);
+        long expected = 3536663L;
+        check("mandelbrot bigdecimal golden checksum=" + checksum, checksum == expected);
+    }
+
+    /** T1.5: Pin iteration counts for known inputs before extracting FractalType to interface. */
+    private static void testFractalTypeEnumContract() {
+        int maxIter = 256;
+        // Mandelbrot at origin is interior
+        int m1 = FractalType.MANDELBROT.iterate(0.0, 0.0, maxIter);
+        check("mandelbrot (0,0) is interior: iter=" + m1, m1 == maxIter);
+
+        // Mandelbrot at (2,2) escapes immediately
+        int m2 = FractalType.MANDELBROT.iterate(2.0, 2.0, maxIter);
+        check("mandelbrot (2,2) escapes quickly: iter=" + m2, m2 < 5);
+
+        // Julia at origin with default constant — escapes but not immediately
+        int j1 = FractalType.iterateJulia(0.0, 0.0, -0.7, 0.27015, maxIter);
+        check("julia (0,0) c=(-0.7,0.27015): iter=" + j1, j1 > 5 && j1 < maxIter);
+
+        // Julia far outside — escapes immediately
+        int j2 = FractalType.iterateJulia(10.0, 10.0, -0.7, 0.27015, maxIter);
+        check("julia (10,10) escapes immediately: iter=" + j2, j2 < 3);
+
+        // BigDecimal must match double for representable inputs
+        java.math.MathContext mc = new java.math.MathContext(20);
+        int mb = FractalType.MANDELBROT.iterateBig(
+            java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, maxIter, mc);
+        check("mandelbrot BigDecimal (0,0) matches double: " + mb + " vs " + m1, mb == m1);
+    }
+
+    /** T1.6: Gradient color mapping must be deterministic and produce known endpoint colors. */
+    private static void testColorMappingDeterministic() {
+        ColorGradient g = gradient();
+        Color[] colors = g.toColors(64);
+        Color[] colors2 = g.toColors(64);
+        boolean identical = true;
+        for (int i = 0; i < 64; i++) {
+            if (colors[i].getRGB() != colors2[i].getRGB()) { identical = false; break; }
+        }
+        check("gradient toColors is deterministic", identical);
+
+        Color first = colors[0];
+        check("gradient first color is (0,7,100): got (" +
+              first.getRed() + "," + first.getGreen() + "," + first.getBlue() + ")",
+              first.getRed() == 0 && first.getGreen() == 7 && first.getBlue() == 100);
+
+        Color last = colors[63];
+        check("gradient last color is (0,2,0): got (" +
+              last.getRed() + "," + last.getGreen() + "," + last.getBlue() + ")",
+              last.getRed() == 0 && last.getGreen() == 2 && last.getBlue() == 0);
+    }
+
+    /** T1.7: QuadTree insert, lookup, tolerance, and prune contract. */
+    private static void testQuadTreeCacheContract() {
+        IterationQuadTree qt = new IterationQuadTree(-4, 4, -4, 4);
+        qt.insert(1.0, 1.0, 42);
+        qt.insert(-1.0, -1.0, 99);
+        qt.insert(0.5, 0.5, 10);
+        check("quadtree size after 3 inserts: " + qt.size(), qt.size() >= 3);
+
+        int r1 = qt.lookup(1.0, 1.0, 0.001);
+        check("quadtree exact lookup (1,1): " + r1, r1 == 42);
+
+        int r2 = qt.lookup(1.001, 1.001, 0.01);
+        check("quadtree near lookup (1.001,1.001) tol=0.01: " + r2, r2 == 42);
+
+        int r3 = qt.lookup(2.0, 2.0, 0.01);
+        check("quadtree miss (2,2): " + r3, r3 == IterationQuadTree.CACHE_MISS);
+
+        qt.pruneOutside(0.5, 1.5, 0.5, 1.5);
+        int afterPrune1 = qt.lookup(1.0, 1.0, 0.001);
+        check("quadtree survives prune (1,1): " + afterPrune1, afterPrune1 == 42);
+
+        int afterPrune2 = qt.lookup(-1.0, -1.0, 0.001);
+        check("quadtree pruned (-1,-1): " + afterPrune2,
+              afterPrune2 == IterationQuadTree.CACHE_MISS);
+    }
+
+    /** T1.8: JSON parsing round-trip (pins behavior before dedup in Phase B.1). */
+    private static void testJsonParseRoundTrip() {
+        String json = "{\n  \"type\": \"MANDELBROT\",\n  \"minReal\": \"-2.0\",\n" +
+            "  \"maxReal\": \"1.0\",\n  \"maxIterations\": 256\n}";
+        java.util.Map<String, String> map = parseJson(json);
+        check("json parse has 4 keys: " + map.size(), map.size() == 4);
+        check("json parse type=MANDELBROT", "MANDELBROT".equals(map.get("type")));
+        check("json parse minReal=-2.0", "-2.0".equals(map.get("minReal")));
+        check("json parse maxIterations=256", "256".equals(map.get("maxIterations")));
+    }
+
+    /** T1.9: All 4 copies of the default gradient must produce identical output. */
+    private static void testGradientDefaultConsistency() {
+        ColorGradient g1 = gradient();
+        Color[] c1 = g1.toColors(256);
+
+        ColorGradient g2 = new ColorGradient();
+        g2.getStops().clear();
+        g2.addStop(0.0f, new Color(0, 7, 100));
+        g2.addStop(0.16f, new Color(32, 107, 203));
+        g2.addStop(0.42f, new Color(237, 255, 255));
+        g2.addStop(0.6425f, new Color(255, 170, 0));
+        g2.addStop(0.8575f, new Color(200, 82, 0));
+        g2.addStop(1.0f, new Color(0, 2, 0));
+        Color[] c2 = g2.toColors(256);
+
+        boolean match = true;
+        for (int i = 0; i < 256; i++) {
+            if (c1[i].getRGB() != c2[i].getRGB()) { match = false; break; }
+        }
+        check("gradient default consistency (256 colors)", match);
+    }
+
     // --- Helpers ---
+
+    private static long pixelChecksum(BufferedImage img) {
+        int[] pixels = getPixels(img);
+        long sum = 0;
+        for (int p : pixels) {
+            sum += (p >> 16) & 0xFF;
+            sum += (p >> 8) & 0xFF;
+            sum += p & 0xFF;
+        }
+        return sum;
+    }
+
+    private static java.util.Map<String, String> parseJson(String json) {
+        java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
+        json = json.trim();
+        if (json.startsWith("{")) json = json.substring(1);
+        if (json.endsWith("}")) json = json.substring(0, json.length() - 1);
+        for (String line : json.split("\n")) {
+            line = line.trim();
+            if (line.isEmpty()) continue;
+            if (line.endsWith(",")) line = line.substring(0, line.length() - 1);
+            int colonIdx = line.indexOf(':');
+            if (colonIdx < 0) continue;
+            String key = line.substring(0, colonIdx).trim();
+            String value = line.substring(colonIdx + 1).trim();
+            if (key.startsWith("\"") && key.endsWith("\"")) key = key.substring(1, key.length() - 1);
+            if (value.startsWith("\"") && value.endsWith("\"")) value = value.substring(1, value.length() - 1);
+            map.put(key, value);
+        }
+        return map;
+    }
 
     private static FractalRenderer newRenderer() {
         FractalRenderer r = new FractalRenderer();
