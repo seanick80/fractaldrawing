@@ -357,11 +357,12 @@ public class FractalRenderTest {
         check("mandelbrot (2,2) escapes quickly: iter=" + m2, m2 < 5);
 
         // Julia at origin with default constant — escapes but not immediately
-        int j1 = FractalType.iterateJulia(0.0, 0.0, -0.7, 0.27015, maxIter);
+        JuliaType julia = new JuliaType(-0.7, 0.27015);
+        int j1 = julia.iterate(0.0, 0.0, maxIter);
         check("julia (0,0) c=(-0.7,0.27015): iter=" + j1, j1 > 5 && j1 < maxIter);
 
         // Julia far outside — escapes immediately
-        int j2 = FractalType.iterateJulia(10.0, 10.0, -0.7, 0.27015, maxIter);
+        int j2 = julia.iterate(10.0, 10.0, maxIter);
         check("julia (10,10) escapes immediately: iter=" + j2, j2 < 3);
 
         // BigDecimal must match double for representable inputs

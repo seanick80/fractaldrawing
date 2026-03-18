@@ -40,8 +40,6 @@ public class FractalRenderer {
     private BigDecimal minImag = new BigDecimal("-2");
     private BigDecimal maxImag = new BigDecimal("2");
     private int maxIterations = 256;
-    private BigDecimal juliaReal = new BigDecimal("-0.7");
-    private BigDecimal juliaImag = new BigDecimal("0.27015");
     private IterationQuadTree cache = new IterationQuadTree(-4, 4, -4, 4);
     private boolean lastRenderWasBigDecimal = false;
     private boolean interiorPruning = true;
@@ -97,8 +95,18 @@ public class FractalRenderer {
         if (changed) cache.clear();
     }
 
-    public double getJuliaReal() { return juliaReal.doubleValue(); }
-    public double getJuliaImag() { return juliaImag.doubleValue(); }
+    public double getJuliaReal() {
+        return (type instanceof JuliaType jt) ? jt.getCr() : -0.7;
+    }
+    public double getJuliaImag() {
+        return (type instanceof JuliaType jt) ? jt.getCi() : 0.27015;
+    }
+    public BigDecimal getJuliaRealBig() {
+        return (type instanceof JuliaType jt) ? jt.getCrBig() : new BigDecimal("-0.7");
+    }
+    public BigDecimal getJuliaImagBig() {
+        return (type instanceof JuliaType jt) ? jt.getCiBig() : new BigDecimal("0.27015");
+    }
 
     public void setJuliaConstant(double real, double imag) {
         setJuliaConstant(new BigDecimal(Double.toString(real)),
@@ -106,10 +114,11 @@ public class FractalRenderer {
     }
 
     public void setJuliaConstant(BigDecimal real, BigDecimal imag) {
-        if (!this.juliaReal.equals(real) || !this.juliaImag.equals(imag)) {
-            this.juliaReal = real;
-            this.juliaImag = imag;
-            if (type == FractalType.JULIA) cache.clear();
+        JuliaType newJulia = new JuliaType(real, imag);
+        if (!(type instanceof JuliaType old) ||
+            old.getCr() != newJulia.getCr() || old.getCi() != newJulia.getCi()) {
+            this.type = newJulia;
+            cache.clear();
         }
     }
 
@@ -259,12 +268,7 @@ public class FractalRenderer {
                     cacheHit[idx] = true;
                     iters[idx] = iter;
                 } else {
-                    if (type == FractalType.JULIA) {
-                        iter = FractalType.iterateJulia(cx, cy,
-                            juliaReal.doubleValue(), juliaImag.doubleValue(), maxIterations);
-                    } else {
-                        iter = type.iterate(cx, cy, maxIterations);
-                    }
+                    iter = type.iterate(cx, cy, maxIterations);
                     iters[idx] = iter;
                 }
 
@@ -333,7 +337,7 @@ public class FractalRenderer {
         // 1. Compute reference orbit at center using BigDecimal
         double[] refZr = new double[maxIterations + 1];
         double[] refZi = new double[maxIterations + 1];
-        boolean isJulia = (type == FractalType.JULIA);
+        boolean isJulia = (type instanceof JuliaType);
 
         int refEscapeIter;
         if (isJulia) {
@@ -351,8 +355,6 @@ public class FractalRenderer {
         // For BigDecimal fallback on glitched pixels
         BigDecimal finalMinReal = centerReal.subtract(viewReal.divide(BigDecimal.valueOf(2), mc), mc);
         BigDecimal finalMinImag = centerImag.subtract(viewImag.divide(BigDecimal.valueOf(2), mc), mc);
-        BigDecimal jrBig = juliaReal;
-        BigDecimal jiBig = juliaImag;
 
         // 3. Interior pruning (Mariani-Silver): divide image into large blocks,
         //    iterate every boundary pixel with BigDecimal. If all boundary pixels
@@ -386,24 +388,20 @@ public class FractalRenderer {
                         for (int px = startX; px < endX && allInterior; px++) {
                             if (renderCancelled) return;
                             allInterior = isBoundaryPixelInterior(px, startY,
-                                finalMinReal, finalMinImag, scaleX, scaleY,
-                                isJulia, jrBig, jiBig, mc);
+                                finalMinReal, finalMinImag, scaleX, scaleY, mc);
                             if (allInterior && endY - 1 > startY) {
                                 allInterior = isBoundaryPixelInterior(px, endY - 1,
-                                    finalMinReal, finalMinImag, scaleX, scaleY,
-                                    isJulia, jrBig, jiBig, mc);
+                                    finalMinReal, finalMinImag, scaleX, scaleY, mc);
                             }
                         }
                         // Left and right edges (excluding corners already checked)
                         for (int py = startY + 1; py < endY - 1 && allInterior; py++) {
                             if (renderCancelled) return;
                             allInterior = isBoundaryPixelInterior(startX, py,
-                                finalMinReal, finalMinImag, scaleX, scaleY,
-                                isJulia, jrBig, jiBig, mc);
+                                finalMinReal, finalMinImag, scaleX, scaleY, mc);
                             if (allInterior && endX - 1 > startX) {
                                 allInterior = isBoundaryPixelInterior(endX - 1, py,
-                                    finalMinReal, finalMinImag, scaleX, scaleY,
-                                    isJulia, jrBig, jiBig, mc);
+                                    finalMinReal, finalMinImag, scaleX, scaleY, mc);
                             }
                         }
 
@@ -456,11 +454,7 @@ public class FractalRenderer {
                         // Fallback to full BigDecimal for this pixel
                         BigDecimal cx = finalMinReal.add(scaleX.multiply(new BigDecimal(col), mc), mc);
                         BigDecimal cy = finalMinImag.add(scaleY.multiply(new BigDecimal(r), mc), mc);
-                        if (isJulia) {
-                            iter = FractalType.iterateJuliaBig(cx, cy, jrBig, jiBig, maxIterations, mc);
-                        } else {
-                            iter = type.iterateBig(cx, cy, maxIterations, mc);
-                        }
+                        iter = type.iterateBig(cx, cy, maxIterations, mc);
                     }
 
                     rgb[idx] = colorForIter(iter, lut);
@@ -493,17 +487,10 @@ public class FractalRenderer {
     private boolean isBoundaryPixelInterior(int px, int py,
                                                BigDecimal minR, BigDecimal minI,
                                                BigDecimal scaleX, BigDecimal scaleY,
-                                               boolean isJulia, BigDecimal jr, BigDecimal ji,
                                                MathContext mc) {
         BigDecimal cx = minR.add(scaleX.multiply(new BigDecimal(px), mc), mc);
         BigDecimal cy = minI.add(scaleY.multiply(new BigDecimal(py), mc), mc);
-        int iter;
-        if (isJulia) {
-            iter = FractalType.iterateJuliaBig(cx, cy, jr, ji, maxIterations, mc);
-        } else {
-            iter = type.iterateBig(cx, cy, maxIterations, mc);
-        }
-        return iter >= maxIterations;
+        return type.iterateBig(cx, cy, maxIterations, mc) >= maxIterations;
     }
 
     /**
@@ -543,10 +530,6 @@ public class FractalRenderer {
         BigDecimal finalMinReal = centerReal.subtract(viewReal.divide(BigDecimal.valueOf(2), mc), mc);
         BigDecimal finalMinImag = centerImag.subtract(viewImag.divide(BigDecimal.valueOf(2), mc), mc);
 
-        boolean isJulia = (type == FractalType.JULIA);
-        BigDecimal jrBig = juliaReal;
-        BigDecimal jiBig = juliaImag;
-
         int nThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService pool = Executors.newFixedThreadPool(nThreads);
 
@@ -558,12 +541,7 @@ public class FractalRenderer {
                     if (renderCancelled) return;
                     BigDecimal cx = finalMinReal.add(scaleX.multiply(new BigDecimal(col), mc), mc);
                     BigDecimal cy = finalMinImag.add(scaleY.multiply(new BigDecimal(r), mc), mc);
-                    int iter;
-                    if (isJulia) {
-                        iter = FractalType.iterateJuliaBig(cx, cy, jrBig, jiBig, maxIterations, mc);
-                    } else {
-                        iter = type.iterateBig(cx, cy, maxIterations, mc);
-                    }
+                    int iter = type.iterateBig(cx, cy, maxIterations, mc);
                     int idx = r * width + col;
                     rgb[idx] = colorForIter(iter, lut);
                 }
@@ -647,7 +625,8 @@ public class FractalRenderer {
     private int computeReferenceOrbitJulia(BigDecimal z0r, BigDecimal z0i,
                                             double[] outZr, double[] outZi, MathContext mc) {
         BigDecimal zr = z0r, zi = z0i;
-        BigDecimal cr = juliaReal, ci = juliaImag;
+        JuliaType jt = (JuliaType) type;
+        BigDecimal cr = jt.getCrBig(), ci = jt.getCiBig();
         BigDecimal four = BigDecimal.valueOf(4);
         BigDecimal two = BigDecimal.valueOf(2);
         double dCr = cr.doubleValue(), dCi = ci.doubleValue();

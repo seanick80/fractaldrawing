@@ -64,9 +64,9 @@ public class FractalTool implements Tool {
         typeCombo.setMaximumSize(new Dimension(120, 28));
         typeCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
         typeCombo.addActionListener(e -> {
-            renderer.setType(typeCombo.getSelectedIndex() == 0
-                ? FractalType.MANDELBROT : FractalType.JULIA);
-            // Reset bounds for the selected type
+            FractalType selected = FractalType.valueOf(
+                ((String) typeCombo.getSelectedItem()).toUpperCase());
+            if (selected != null) renderer.setType(selected);
             renderer.setBounds(-2, 2, -2, 2);
             updateInfoLabels();
         });
@@ -444,9 +444,11 @@ public class FractalTool implements Tool {
 
             String typeName = data.getOrDefault("type", "MANDELBROT");
             FractalType type = FractalType.valueOf(typeName);
+            if (type == null) type = FractalType.MANDELBROT;
             renderer.setType(type);
             if (typeCombo != null) {
-                typeCombo.setSelectedIndex(type == FractalType.MANDELBROT ? 0 : 1);
+                String displayName = typeName.substring(0, 1) + typeName.substring(1).toLowerCase();
+                typeCombo.setSelectedItem(displayName);
             }
 
             BigDecimal minR = new BigDecimal(data.get("minReal"));
