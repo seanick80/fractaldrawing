@@ -516,6 +516,32 @@ These are the code paths where abstraction overhead matters most, ordered by cal
 
 ---
 
+## Language-Level Performance Ceiling: Java vs Native
+
+The current implementation is in Java, which was chosen early on for development velocity, Swing UI integration, and cross-platform ease. However, fractal rendering is fundamentally an allocation-heavy, tight-loop numerical workload where Java's runtime characteristics create friction:
+
+- **Per-iteration object allocation in BigDecimal paths.** Each `BigDecimal.multiply()`, `.add()`, `.subtract()` allocates a new `BigDecimal` object. At deep zoom with 500+ iterations × 120,000 pixels, this generates hundreds of millions of short-lived objects per render. The GC handles this, but the allocation + collection overhead is nonzero and unpredictable (GC pauses can spike individual frame times).
+- **No value types (yet).** Complex number pairs `(re, im)` must be heap-allocated objects or decomposed into parallel `double[]` arrays. C/C++ structs or Rust tuples live on the stack with zero allocation cost. Project Valhalla (Java value types) would help, but it's not yet production-ready.
+- **No SIMD intrinsics.** The inner escape-time loop is a textbook candidate for AVX2/AVX-512 vectorization (process 4-8 pixels simultaneously). Java's auto-vectorization via the JIT is inconsistent and opaque. C/C++ with intrinsics or compiler hints gives direct control.
+- **BigDecimal is not designed for numerical hot loops.** Its internal representation (unscaled `BigInteger` + scale) carries overhead for arbitrary-precision decimal semantics we don't need — we need arbitrary-precision *binary* floating-point. A purpose-built arbitrary-precision library (GMP/MPFR via JNI, or a pure-C implementation) would be significantly faster.
+
+**Decision point: reevaluate after Phase C.**
+
+After all refactoring and new type implementation is complete, run the full benchmark suite and compare against theoretical throughput limits. Specifically:
+
+1. **Profile GC pressure** during deep-zoom BigDecimal renders. If GC time exceeds 10% of render time, the allocation pattern is a fundamental bottleneck that Java workarounds (object pooling, `MutableBigDecimal` hacks) can only partially address.
+2. **Profile the perturbation inner loop** — this is pure `double` arithmetic and should JIT-compile to near-native speed. If it does, the Java overhead is limited to the BigDecimal paths and the native evaluation only needs to cover arbitrary-precision math.
+3. **Evaluate a hybrid approach:** keep the Java Swing UI and tool framework, but call into a native library (via JNI or Panama FFI) for the compute-intensive iteration kernels. This preserves the existing UI investment while unlocking:
+   - Stack-allocated complex number types
+   - SIMD vectorization of the escape-time loop
+   - GMP/MPFR for arbitrary-precision arithmetic (~10-50x faster than `java.math.BigDecimal` for multiplication-heavy workloads)
+   - Manual memory control for reference orbit arrays
+4. **If the hybrid approach is warranted**, the refactoring in Phases B.2 (FractalType interface) and B.3 (PerturbationStrategy) directly enables it — the native code implements the same interface contracts, and the renderer doesn't need to know whether iteration is happening in Java or native code.
+
+This is NOT a blocker for the current plan. The refactoring and new type work should proceed in Java. But if benchmark results after Phase C show that we're spending >30% of render time on overhead that Java cannot eliminate (GC, boxing, missing SIMD), then a native compute kernel becomes the logical next step rather than further Java micro-optimization.
+
+---
+
 ## Sequencing Summary
 
 ```
