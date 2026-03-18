@@ -14,7 +14,7 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 - **File I/O**: Open and save PNG, JPG, BMP images
 
 ### Fractal Explorer
-- **Mandelbrot and Julia sets** with click-to-zoom and scroll wheel navigation
+- **5 fractal types**: Mandelbrot, Julia, Burning Ship, Tricorn, and Magnet Type I — selectable from dropdown and menu
 - **Arbitrary-precision deep zoom** using BigDecimal arithmetic — no pixelation at any zoom level
 - **Perturbation theory**: Computes one reference orbit at full precision, then uses fast double arithmetic for all other pixels. Automatic fallback to BigDecimal for interior pixels where perturbation is invalid.
 - **Auto-switching**: Renders in double precision at shallow zoom (fast), automatically switches to perturbation + BigDecimal past ~10^13 zoom
@@ -25,6 +25,8 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 - **Save/Load locations**: Export and import fractal coordinates as JSON for bookmarking and sharing
 - **Preset locations**: Built-in menu with interesting locations from Seahorse Valley to 10^18 zoom
 - **Async rendering**: Non-blocking renders with cancellation support for responsive UI
+- **Render progress**: Live percentage, row count, elapsed time, and ETA display during slow renders
+- **Extensible type system**: New fractal types auto-populate UI via registry — implement `FractalType`, register, done
 
 ## Build & Run
 
@@ -41,7 +43,7 @@ build.cmd run
 ## Testing
 
 ```bash
-# Run regression tests (19 assertions covering all render modes)
+# Run regression tests (89 assertions covering all render modes and fractal types)
 ./test.sh       # Unix/Git Bash
 test.cmd        # Windows
 
@@ -50,13 +52,16 @@ java -ea -cp out com.seanick80.drawingapp.fractal.FractalRenderTest
 ```
 
 Tests cover:
-- Render determinism
+- Golden-value pixel checksums for Mandelbrot, Julia (double, perturbation, BigDecimal)
 - Perturbation vs BigDecimal correctness (structural match, interior pixel accuracy)
 - Deep zoom overflow handling (zoom > 10^17)
 - Double precision degradation detection
-- Julia set rendering
-- Cache stability across zoom cycles
-- All render mode switching
+- All 5 fractal types: iteration properties, BigDecimal/double agreement, rendering validity
+- Cross-mode rendering (all types × DOUBLE + BIGDECIMAL)
+- Type registry round-trip (name → lookup → match)
+- ViewportCalculator aspect-ratio correction, ColorMapper LUT construction
+- QuadTree cache contract, JSON parsing, gradient consistency
+- Cache stability across zoom cycles, render mode switching
 
 ## Benchmarking
 
@@ -89,12 +94,24 @@ src/com/seanick80/drawingapp/
 ├── fills/                   # Pluggable fill providers
 ├── gradient/                # Color gradient editor and interpolation
 ├── fractal/
-│   ├── FractalType.java     # Mandelbrot/Julia iteration (double + BigDecimal)
-│   ├── FractalRenderer.java # Rendering engine: double, perturbation, BigDecimal paths
+│   ├── FractalType.java         # Interface for fractal iteration
+│   ├── FractalTypeRegistry.java # Dynamic type registry (auto-populates UI)
+│   ├── MandelbrotType.java      # Mandelbrot: z²+c
+│   ├── JuliaType.java           # Julia: z²+c (fixed c)
+│   ├── BurningShipType.java     # Burning Ship: (|Re(z)|+i|Im(z)|)²+c
+│   ├── TricornType.java         # Tricorn: conj(z)²+c
+│   ├── MagnetTypeIType.java     # Magnet I: ((z²+c-1)/(2z+c-2))²
+│   ├── PerturbationStrategy.java    # Interface for perturbation theory
+│   ├── MandelbrotPerturbation.java  # Mandelbrot perturbation impl
+│   ├── JuliaPerturbation.java       # Julia perturbation impl
+│   ├── FractalRenderer.java    # Rendering orchestrator: mode selection, async
+│   ├── ViewportCalculator.java # Aspect-ratio-corrected viewport math
+│   ├── FractalColorMapper.java # Color LUT construction + mapping
 │   ├── IterationQuadTree.java  # Spatial cache for iteration counts
+│   ├── FractalJsonUtil.java    # Shared JSON parsing
 │   ├── FractalBenchmark.java   # CLI performance benchmark
 │   ├── PerturbationEval.java   # CLI perturbation correctness evaluation
-│   └── FractalRenderTest.java  # Regression tests
+│   └── FractalRenderTest.java  # 89-assertion regression test suite
 └── tools/
     ├── Tool.java            # Tool interface
     ├── FractalTool.java     # Fractal UI: zoom, save/load, async render
@@ -117,34 +134,48 @@ public class MyCustomFill implements FillProvider {
 }
 ```
 
+## Adding New Fractal Types
+
+1. Create a class implementing `FractalType` with `iterate()` and `iterateBig()` methods
+2. Register it in `FractalTypeRegistry` static initializer — it auto-appears in the UI
+
+```java
+public final class MyFractalType implements FractalType {
+    @Override public String name() { return "MY_FRACTAL"; }
+
+    @Override
+    public int iterate(double cx, double cy, int maxIter) {
+        // Your escape-time iteration formula here
+    }
+
+    @Override
+    public int iterateBig(BigDecimal cx, BigDecimal cy, int maxIter, MathContext mc) {
+        // Same formula in arbitrary precision
+    }
+}
+```
+
 ## Future Work
 
 ### Performance
 
 - **Memory hygiene** — Pre-allocate buffers on fractal tool initialization instead of reallocating per render. Remove allocations from the perturbation and BigDecimal hot paths where optimization matters most.
 
-- **Interior pruning improvements** — Current Mariani-Silver boundary sampling is pixel-perfect but expensive. Explore hierarchical quadtree subdivision: if a block's boundary is all interior, skip it; otherwise subdivide and repeat. This should significantly reduce the number of BigDecimal fallback computations for interior-heavy regions.
+- **Interior pruning improvements** — Current Mariani-Silver boundary sampling is pixel-perfect but expensive. Explore hierarchical quadtree subdivision: if a block's boundary is all interior, skip it; otherwise subdivide and repeat.
 
-- **Pre-calculate pixel coordinates** — Compute the real and imaginary axis values for the current viewport once (two 1D arrays), then pass them into each pixel worker. Saves 2–4 orders of magnitude of coordinate mapping computation per iteration.
+- **Pre-calculate pixel coordinates** — Compute the real and imaginary axis values for the current viewport once (two 1D arrays), then pass them into each pixel worker.
 
-- **Progress indicator** — Add percent-complete status for slow renders. Especially useful for deep zoom locations like:
-  ```json
-  {
-    "type": "MANDELBROT",
-    "minReal": "-1.25015600357202160012093372643103594",
-    "maxReal": "-1.25015600357202069062623195350279806",
-    "minImag": "0.00967906445708459917854086823385124937",
-    "maxImag": "0.00967906445708550867324264116208916425",
-    "maxIterations": 556
-  }
-  ```
+- **Perturbation for new types** — Burning Ship, Tricorn, and Magnet currently fall back to pure BigDecimal for deep zoom. Adding perturbation strategies for these would significantly improve deep zoom performance.
+
+- **Custom FixedPrecisionFloat** — Investigate a mutable fixed-width binary float using `long[]` limbs with zero allocation in the inner loop, as a faster alternative to BigDecimal for deep zoom.
 
 ### Features
+
+- **More fractal types** — Mandelbulb/Mandelbox (3D), Sierpinski triangle/carpet, Koch snowflake (IFS fractals — would require a separate rendering paradigm)
 
 - **Animations**
   - *Iteration animation* — Render incrementally (add one iteration per frame), save as video
   - *Zoom animation* — Smooth animated zoom into a target location
   - *Palette cycle animation* — Rotate colors through the gradient over time
-  - Previous version of this app had these as selectable screen saver animations
 
-- **Random location explorer** — Heuristic-based discovery of interesting fractal locations. Pick random coordinates in [-2, 2] with random zoom levels, sample a few points, and filter for locations with varied palette entries (not all interior). Could leverage AI for smarter location selection.
+- **Random location explorer** — Heuristic-based discovery of interesting fractal locations. Pick random coordinates, sample a few points, and filter for locations with varied palette entries.
