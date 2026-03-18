@@ -60,5 +60,10 @@ public final class JuliaType implements FractalType {
     @Override
     public boolean supportsPerturbation() { return true; }
 
+    @Override
+    public PerturbationStrategy getPerturbationStrategy() {
+        return new JuliaPerturbation(crBig, ciBig);
+    }
+
     @Override public String toString() { return name(); }
 }

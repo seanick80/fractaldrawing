@@ -27,6 +27,9 @@ public interface FractalType {
     /** Whether this type supports perturbation theory acceleration. */
     default boolean supportsPerturbation() { return false; }
 
+    /** Returns the perturbation strategy, or null if not supported. */
+    default PerturbationStrategy getPerturbationStrategy() { return null; }
+
     /** Look up a type by name. Returns null if not found. */
     static FractalType valueOf(String name) {
         return FractalTypeRegistry.getDefault().getByName(name);

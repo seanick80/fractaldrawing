@@ -298,8 +298,6 @@ public class FractalRenderer {
         return image;
     }
 
-    private static final int GLITCH_DETECTED = -2;
-
     private BufferedImage renderBigDecimal(int width, int height, ColorGradient gradient,
                                            BigDecimal rangeReal, BigDecimal rangeImag) {
         int[] rgb = new int[width * height];
@@ -334,17 +332,14 @@ public class FractalRenderer {
 
         // --- Perturbation theory: one BigDecimal reference orbit, all pixels in double ---
 
+        PerturbationStrategy strategy = type.getPerturbationStrategy();
+
         // 1. Compute reference orbit at center using BigDecimal
         double[] refZr = new double[maxIterations + 1];
         double[] refZi = new double[maxIterations + 1];
-        boolean isJulia = (type instanceof JuliaType);
 
-        int refEscapeIter;
-        if (isJulia) {
-            refEscapeIter = computeReferenceOrbitJulia(centerReal, centerImag, refZr, refZi, mc);
-        } else {
-            refEscapeIter = computeReferenceOrbitMandelbrot(centerReal, centerImag, refZr, refZi, mc);
-        }
+        int refEscapeIter = strategy.computeReferenceOrbit(
+            centerReal, centerImag, maxIterations, mc, refZr, refZi);
 
         // 2. Per-pixel deltas computed in double (pixel offset from center)
         double dScaleX = scaleX.doubleValue();
@@ -448,9 +443,9 @@ public class FractalRenderer {
                     double dcr = (col - halfW) * dScaleX;
                     int idx = r * width + col;
 
-                    int iter = perturbIterate(refZr, refZi, dcr, dci, isJulia, refEscapeIter);
+                    int iter = strategy.perturbIterate(refZr, refZi, dcr, dci, refEscapeIter, maxIterations);
 
-                    if (iter == GLITCH_DETECTED) {
+                    if (iter == PerturbationStrategy.GLITCH_DETECTED) {
                         // Fallback to full BigDecimal for this pixel
                         BigDecimal cx = finalMinReal.add(scaleX.multiply(new BigDecimal(col), mc), mc);
                         BigDecimal cy = finalMinImag.add(scaleY.multiply(new BigDecimal(r), mc), mc);
@@ -570,150 +565,4 @@ public class FractalRenderer {
         return image;
     }
 
-    /**
-     * Compute reference orbit for Mandelbrot at (cr, ci) using BigDecimal.
-     * Always iterates to maxIterations (even past escape) so perturbation
-     * has reference data for all pixels regardless of when they escape.
-     * Returns the iteration at which the reference escapes (or maxIterations).
-     */
-    private int computeReferenceOrbitMandelbrot(BigDecimal cr, BigDecimal ci,
-                                                 double[] outZr, double[] outZi, MathContext mc) {
-        BigDecimal zr = BigDecimal.ZERO, zi = BigDecimal.ZERO;
-        BigDecimal four = BigDecimal.valueOf(4);
-        BigDecimal two = BigDecimal.valueOf(2);
-        int escapeIter = maxIterations;
-        double dCr = cr.doubleValue(), dCi = ci.doubleValue();
-        for (int i = 0; i < maxIterations; i++) {
-            outZr[i] = zr.doubleValue();
-            outZi[i] = zi.doubleValue();
-            if (escapeIter < maxIterations) {
-                // Past escape: continue in double (BigDecimal would overflow)
-                double dzr = outZr[i], dzi = outZi[i];
-                double dzr2 = dzr * dzr, dzi2 = dzi * dzi;
-                double newDzi = 2 * dzr * dzi + dCi;
-                outZr[i + 1] = dzr2 - dzi2 + dCr;
-                outZi[i + 1] = newDzi;
-                continue;
-            }
-            BigDecimal zr2 = zr.multiply(zr, mc);
-            BigDecimal zi2 = zi.multiply(zi, mc);
-            if (zr2.add(zi2, mc).compareTo(four) > 0) {
-                escapeIter = i;
-                // Switch to double for remaining iterations
-                double dzr = zr.doubleValue(), dzi = zi.doubleValue();
-                double dzr2 = dzr * dzr, dzi2 = dzi * dzi;
-                double newDzi = 2 * dzr * dzi + dCi;
-                outZr[i + 1] = dzr2 - dzi2 + dCr;
-                outZi[i + 1] = newDzi;
-                continue;
-            }
-            BigDecimal newZi = two.multiply(zr, mc).multiply(zi, mc).add(ci, mc);
-            zr = zr2.subtract(zi2, mc).add(cr, mc);
-            zi = newZi;
-        }
-        if (escapeIter == maxIterations) {
-            outZr[maxIterations] = zr.doubleValue();
-            outZi[maxIterations] = zi.doubleValue();
-        }
-        return escapeIter;
-    }
-
-    /**
-     * Compute reference orbit for Julia at starting point (z0r, z0i) with fixed constant.
-     * Always iterates to maxIterations for full reference data.
-     */
-    private int computeReferenceOrbitJulia(BigDecimal z0r, BigDecimal z0i,
-                                            double[] outZr, double[] outZi, MathContext mc) {
-        BigDecimal zr = z0r, zi = z0i;
-        JuliaType jt = (JuliaType) type;
-        BigDecimal cr = jt.getCrBig(), ci = jt.getCiBig();
-        BigDecimal four = BigDecimal.valueOf(4);
-        BigDecimal two = BigDecimal.valueOf(2);
-        double dCr = cr.doubleValue(), dCi = ci.doubleValue();
-        int escapeIter = maxIterations;
-        for (int i = 0; i < maxIterations; i++) {
-            outZr[i] = zr.doubleValue();
-            outZi[i] = zi.doubleValue();
-            if (escapeIter < maxIterations) {
-                double dzr = outZr[i], dzi = outZi[i];
-                double dzr2 = dzr * dzr, dzi2 = dzi * dzi;
-                double newDzi = 2 * dzr * dzi + dCi;
-                outZr[i + 1] = dzr2 - dzi2 + dCr;
-                outZi[i + 1] = newDzi;
-                continue;
-            }
-            BigDecimal zr2 = zr.multiply(zr, mc);
-            BigDecimal zi2 = zi.multiply(zi, mc);
-            if (zr2.add(zi2, mc).compareTo(four) > 0) {
-                escapeIter = i;
-                double dzr = zr.doubleValue(), dzi = zi.doubleValue();
-                double dzr2 = dzr * dzr, dzi2 = dzi * dzi;
-                double newDzi = 2 * dzr * dzi + dCi;
-                outZr[i + 1] = dzr2 - dzi2 + dCr;
-                outZi[i + 1] = newDzi;
-                continue;
-            }
-            BigDecimal newZi = two.multiply(zr, mc).multiply(zi, mc).add(ci, mc);
-            zr = zr2.subtract(zi2, mc).add(cr, mc);
-            zi = newZi;
-        }
-        if (escapeIter == maxIterations) {
-            outZr[maxIterations] = zr.doubleValue();
-            outZi[maxIterations] = zi.doubleValue();
-        }
-        return escapeIter;
-    }
-
-    /**
-     * Perturbation iteration: compute escape time for a pixel at offset (dcr, dci)
-     * from the reference orbit, using fast double arithmetic.
-     *
-     * Mandelbrot: δz₀ = 0, δz_{n+1} = 2·Z_n·δz_n + δz_n² + δc
-     * Julia:      δz₀ = δc, δz_{n+1} = 2·Z_n·δz_n + δz_n²
-     *
-     * If the pixel hasn't escaped by the time the reference orbit escapes,
-     * perturbation is invalid (reference Z values blow up) so we return
-     * GLITCH_DETECTED for BigDecimal fallback.
-     *
-     * Returns iteration count, or GLITCH_DETECTED if perturbation became unreliable.
-     */
-    private int perturbIterate(double[] refZr, double[] refZi,
-                                double dcr, double dci, boolean isJulia,
-                                int refEscapeIter) {
-        double dzr = isJulia ? dcr : 0;
-        double dzi = isJulia ? dci : 0;
-        double addR = isJulia ? 0 : dcr;
-        double addI = isJulia ? 0 : dci;
-
-        // Only iterate up to refEscapeIter — beyond that, reference Z is invalid
-        int limit = Math.min(maxIterations, refEscapeIter);
-
-        for (int i = 0; i < limit; i++) {
-            double Zr = refZr[i], Zi = refZi[i];
-
-            // δz_{n+1} = 2·Z_n·δz_n + δz_n² + δc
-            double newDzr = 2 * (Zr * dzr - Zi * dzi) + dzr * dzr - dzi * dzi + addR;
-            double newDzi = 2 * (Zr * dzi + Zi * dzr) + 2 * dzr * dzi + addI;
-            dzr = newDzr;
-            dzi = newDzi;
-
-            // Escape check: |Z_n+1 + δz_n+1|² > 4
-            double Zr1 = refZr[i + 1], Zi1 = refZi[i + 1];
-            double totalR = Zr1 + dzr;
-            double totalI = Zi1 + dzi;
-            double totalMag2 = totalR * totalR + totalI * totalI;
-            if (totalMag2 > 4.0) return i + 1;
-
-            // Glitch: NaN/Inf means double precision completely failed
-            if (Double.isNaN(dzr) || Double.isInfinite(dzr)) {
-                return GLITCH_DETECTED;
-            }
-        }
-
-        // If reference escaped but this pixel didn't, fall back to BigDecimal
-        if (refEscapeIter < maxIterations) {
-            return GLITCH_DETECTED;
-        }
-        return maxIterations;
-    }
 }

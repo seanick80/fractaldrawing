@@ -38,5 +38,10 @@ public final class MandelbrotType implements FractalType {
     @Override
     public boolean supportsPerturbation() { return true; }
 
+    @Override
+    public PerturbationStrategy getPerturbationStrategy() {
+        return new MandelbrotPerturbation();
+    }
+
     @Override public String toString() { return name(); }
 }
