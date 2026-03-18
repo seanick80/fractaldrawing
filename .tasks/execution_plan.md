@@ -538,6 +538,81 @@ After all refactoring and new type implementation is complete, run the full benc
    - Manual memory control for reference orbit arrays
 4. **If the hybrid approach is warranted**, the refactoring in Phases B.2 (FractalType interface) and B.3 (PerturbationStrategy) directly enables it — the native code implements the same interface contracts, and the renderer doesn't need to know whether iteration is happening in Java or native code.
 
+### Custom Arbitrary-Precision Floating Point Library
+
+`java.math.BigDecimal` is the single largest contributor to deep-zoom render time. It's used in three hot paths:
+
+1. **Pure BigDecimal pixel iteration** (`renderPureBigDecimal`, L553-571) — every pixel × every iteration step calls `multiply()`, `add()`, `subtract()`, each allocating a new `BigDecimal`. At 400×300 × 500 iterations, that's ~180M `BigDecimal` allocations per render.
+2. **Reference orbit computation** (`computeReferenceOrbitMandelbrot/Julia`, L601-686) — one orbit per render, but up to `maxIterations` steps of BigDecimal arithmetic. Each step: 2 multiplies + 1 add + 1 subtract + 1 compare = ~5 allocations × 500 iterations = ~2,500 objects. This is tolerable.
+3. **Interior pruning boundary pixels** (L305-363) — BigDecimal iteration for border pixels of each 50×100 block. Volume depends on block count and boundary length.
+
+**Why BigDecimal is slow for this workload:**
+
+| Property | BigDecimal behavior | What we actually need |
+|----------|-------------------|----------------------|
+| Number system | Base-10 decimal | Base-2 binary (we're doing z²+c, not currency) |
+| Internal representation | `BigInteger` (immutable, arbitrary length) + `int scale` | Fixed-width limb array (e.g., 4×64-bit for ~240-bit precision) |
+| Allocation | Every arithmetic op allocates a new object + new `BigInteger` + new `int[]` for magnitude | Mutate in place, zero allocation in the inner loop |
+| Precision tracking | Dynamic per-operation via `MathContext` | Fixed for entire render (set once based on zoom level) |
+| Normalization | Strips trailing zeros, adjusts scale | Unnecessary — we don't need exact decimal representation |
+
+**What a custom `FixedPrecisionFloat` could look like:**
+
+```java
+/**
+ * Mutable fixed-precision binary floating point for fractal iteration.
+ * Backed by a fixed-size long[] limb array, no heap allocation after construction.
+ */
+public final class FixedPrecisionFloat {
+    private final long[] limbs;  // e.g., 4 longs = 256-bit mantissa
+    private int exponent;
+    private int sign;
+
+    // Mutating arithmetic — no allocation
+    public FixedPrecisionFloat multiply(FixedPrecisionFloat other, FixedPrecisionFloat result) { ... }
+    public FixedPrecisionFloat add(FixedPrecisionFloat other, FixedPrecisionFloat result) { ... }
+    public FixedPrecisionFloat subtract(FixedPrecisionFloat other, FixedPrecisionFloat result) { ... }
+    public int compareTo(FixedPrecisionFloat other) { ... }
+    public double doubleValue() { ... }
+
+    // Pre-allocate a pool of temporaries for the iteration loop
+    public static FixedPrecisionFloat[] allocatePool(int count, int limbCount) { ... }
+}
+```
+
+**Key design choices:**
+
+1. **Fixed limb count per render.** The zoom level determines precision requirements once at render start. A 10^-30 zoom needs ~100 bits; 10^-60 needs ~200 bits. We pick the limb count once and every `FixedPrecisionFloat` in that render uses it. No dynamic sizing.
+2. **Mutable with output parameter.** `a.multiply(b, result)` writes into `result` — zero allocation. The iteration loop pre-allocates `zr`, `zi`, `zr2`, `zi2`, `temp` as a fixed pool of 6-8 values.
+3. **Base-2 representation.** Multiplication of two N-limb numbers uses schoolbook or Karatsuba (for N≥4) on `long` words with carry propagation. This is what GMP does internally — we'd be a simplified version targeting the specific precisions fractal rendering needs (64-512 bits, not thousands).
+4. **No decimal conversion overhead.** Values stay in binary throughout iteration. Only convert to/from `BigDecimal` at the boundaries (reading JSON, displaying coordinates).
+
+**Estimated speedup over BigDecimal:**
+
+- **Allocation elimination alone:** At 180M allocations per render, even at 10ns/allocation (optimistic for GC-tracked objects), that's ~1.8 seconds of pure allocation overhead. A mutable approach drops this to zero.
+- **Binary vs decimal multiplication:** BigDecimal internally converts to binary for multiplication anyway, then converts back. We skip both conversions.
+- **Conservative estimate:** 3-10x speedup for pure BigDecimal paths. This is consistent with benchmarks of GMP vs `java.math.BigInteger` at similar precisions.
+
+**What it would take to build:**
+
+| Component | Effort | Complexity |
+|-----------|--------|------------|
+| Limb-array add/subtract with carry | Small | Low — standard bignum operation |
+| Limb-array multiply (schoolbook) | Medium | Medium — carry propagation across limbs needs care |
+| Karatsuba multiply (for ≥4 limbs) | Medium | Medium — recursive divide-and-conquer, but well-documented |
+| Normalization / exponent tracking | Small | Low |
+| Comparison | Small | Low |
+| `doubleValue()` conversion | Small | Low |
+| `BigDecimal` ↔ `FixedPrecisionFloat` conversion | Small | Low — only at boundaries |
+| Correctness tests against BigDecimal | Medium | Critical — must produce bit-identical iteration counts |
+| Integration with FractalType interface | Small | The `iterateBig()` signature would gain a `FixedPrecisionFloat` overload or the library implements a common interface |
+
+**Total estimate:** ~2-4 days for a working implementation, ~1-2 more days for thorough testing and integration. The schoolbook multiply loop is the core complexity; everything else is straightforward.
+
+**Alternative: JNI bridge to GMP/MPFR.** Instead of writing our own, we could call GMP through JNI or Panama FFI. GMP's `mpz_mul` is hand-tuned assembly for each CPU architecture. However, JNI call overhead (~50-100ns per call) at 180M calls/render would add ~9-18 seconds — worse than BigDecimal. The JNI approach only wins if we push the entire iteration loop into native code (see hybrid approach above). A pure-Java `FixedPrecisionFloat` avoids this boundary-crossing overhead entirely.
+
+**Recommendation:** Build the Java `FixedPrecisionFloat` as a post-Phase-C optimization if BigDecimal profiling confirms >30% of render time is allocation/GC. If that's still not enough, the next step is the native iteration kernel which uses GMP internally with zero JNI boundary crossings per iteration.
+
 This is NOT a blocker for the current plan. The refactoring and new type work should proceed in Java. But if benchmark results after Phase C show that we're spending >30% of render time on overhead that Java cannot eliminate (GC, boxing, missing SIMD), then a native compute kernel becomes the logical next step rather than further Java micro-optimization.
 
 ---
