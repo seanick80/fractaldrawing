@@ -7,11 +7,8 @@ import java.awt.image.BufferedImage;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
@@ -28,13 +25,11 @@ public class FractalRenderer {
     public enum RenderMode { AUTO, DOUBLE, BIGDECIMAL, PERTURBATION }
     public enum ColorMode { MOD, DIVISION }
 
-    private static final double TOLERANCE_FRACTION = 0.1;
     private static final double BIGDECIMAL_THRESHOLD = 1e-13;
 
     private FractalType type = FractalType.MANDELBROT;
     private RenderMode renderMode = RenderMode.AUTO;
     private ColorMode colorMode = ColorMode.MOD;
-    private static final int MOD_PALETTE_SIZE = 64;
     private BigDecimal minReal = new BigDecimal("-2");
     private BigDecimal maxReal = new BigDecimal("2");
     private BigDecimal minImag = new BigDecimal("-2");
@@ -207,50 +202,17 @@ public class FractalRenderer {
         }
     }
 
-    private int[] buildColorLut(ColorGradient gradient) {
-        int size = (colorMode == ColorMode.MOD) ? MOD_PALETTE_SIZE : maxIterations;
-        Color[] colors = gradient.toColors(size);
-        int[] lut = new int[size];
-        for (int i = 0; i < size; i++) lut[i] = colors[i].getRGB();
-        return lut;
-    }
-
-    private int colorForIter(int iter, int[] lut) {
-        if (iter >= maxIterations) return Color.BLACK.getRGB();
-        if (colorMode == ColorMode.MOD) return lut[iter % lut.length];
-        return lut[iter];
+    private FractalColorMapper buildColorMapper(ColorGradient gradient) {
+        return new FractalColorMapper(gradient, maxIterations, colorMode);
     }
 
     private BufferedImage renderDouble(int width, int height, ColorGradient gradient) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         int[] rgb = new int[width * height];
 
-        int[] lut = buildColorLut(gradient);
-
-        double dMinReal = minReal.doubleValue();
-        double dMaxReal = maxReal.doubleValue();
-        double dMinImag = minImag.doubleValue();
-        double dMaxImag = maxImag.doubleValue();
-        double rangeReal = dMaxReal - dMinReal;
-        double rangeImag = dMaxImag - dMinImag;
-        double aspect = (double) width / height;
-        double centerReal = (dMinReal + dMaxReal) / 2;
-        double centerImag = (dMinImag + dMaxImag) / 2;
-
-        double viewReal, viewImag;
-        if (rangeReal / rangeImag > aspect) {
-            viewReal = rangeReal;
-            viewImag = rangeReal / aspect;
-        } else {
-            viewImag = rangeImag;
-            viewReal = rangeImag * aspect;
-        }
-
-        double finalMinReal = centerReal - viewReal / 2;
-        double finalMinImag = centerImag - viewImag / 2;
-        double scaleX = viewReal / (width - 1);
-        double scaleY = viewImag / (height - 1);
-        double tolerance = Math.min(scaleX, scaleY) * TOLERANCE_FRACTION;
+        FractalColorMapper mapper = buildColorMapper(gradient);
+        ViewportCalculator.DoubleViewport vp = ViewportCalculator.computeDouble(
+                minReal, maxReal, minImag, maxImag, width, height);
 
         int[] iters = new int[width * height];
         boolean[] cacheHit = new boolean[width * height];
@@ -258,12 +220,12 @@ public class FractalRenderer {
         cache.resetStats();
 
         IntStream.range(0, height).parallel().forEach(row -> {
-            double cy = finalMinImag + row * scaleY;
+            double cy = vp.minImag + row * vp.scaleY;
             for (int col = 0; col < width; col++) {
-                double cx = finalMinReal + col * scaleX;
+                double cx = vp.minReal + col * vp.scaleX;
                 int idx = row * width + col;
 
-                int iter = cache.lookup(cx, cy, tolerance);
+                int iter = cache.lookup(cx, cy, vp.tolerance);
                 if (iter != IterationQuadTree.CACHE_MISS) {
                     cacheHit[idx] = true;
                     iters[idx] = iter;
@@ -272,26 +234,24 @@ public class FractalRenderer {
                     iters[idx] = iter;
                 }
 
-                rgb[idx] = colorForIter(iters[idx], lut);
+                rgb[idx] = mapper.colorForIter(iters[idx]);
             }
         });
 
         for (int row = 0; row < height; row++) {
-            double cy = finalMinImag + row * scaleY;
+            double cy = vp.minImag + row * vp.scaleY;
             for (int col = 0; col < width; col++) {
                 int idx = row * width + col;
                 if (!cacheHit[idx]) {
-                    double cx = finalMinReal + col * scaleX;
+                    double cx = vp.minReal + col * vp.scaleX;
                     cache.insert(cx, cy, iters[idx]);
                 }
             }
         }
 
-        double marginR = viewReal;
-        double marginI = viewImag;
         cache.pruneOutside(
-            finalMinReal - marginR, finalMinReal + viewReal + marginR,
-            finalMinImag - marginI, finalMinImag + viewImag + marginI
+            vp.minReal - vp.viewReal, vp.minReal + vp.viewReal + vp.viewReal,
+            vp.minImag - vp.viewImag, vp.minImag + vp.viewImag + vp.viewImag
         );
 
         image.setRGB(0, 0, width, height, rgb, 0, width);
@@ -306,29 +266,15 @@ public class FractalRenderer {
         bigDecimalTotalRows = height;
         renderCancelled = false;
 
-        int[] lut = buildColorLut(gradient);
+        FractalColorMapper mapper = buildColorMapper(gradient);
 
         // Calculate precision: 20 + log10(zoom)
         double zoom = 4.0 / Math.min(rangeReal.abs().doubleValue(), rangeImag.abs().doubleValue());
         int precision = 20 + (int) Math.ceil(Math.log10(Math.max(zoom, 1)));
         MathContext mc = new MathContext(precision, RoundingMode.HALF_UP);
 
-        BigDecimal bdAspect = new BigDecimal(width).divide(new BigDecimal(height), mc);
-        BigDecimal centerReal = minReal.add(maxReal, mc).divide(BigDecimal.valueOf(2), mc);
-        BigDecimal centerImag = minImag.add(maxImag, mc).divide(BigDecimal.valueOf(2), mc);
-
-        BigDecimal ratioRI = rangeReal.divide(rangeImag, mc);
-        BigDecimal viewReal, viewImag;
-        if (ratioRI.compareTo(bdAspect) > 0) {
-            viewReal = rangeReal;
-            viewImag = rangeReal.divide(bdAspect, mc);
-        } else {
-            viewImag = rangeImag;
-            viewReal = rangeImag.multiply(bdAspect, mc);
-        }
-
-        BigDecimal scaleX = viewReal.divide(new BigDecimal(width - 1), mc);
-        BigDecimal scaleY = viewImag.divide(new BigDecimal(height - 1), mc);
+        ViewportCalculator.BigViewport vp = ViewportCalculator.computeBig(
+                minReal, maxReal, minImag, maxImag, rangeReal, rangeImag, width, height, mc);
 
         // --- Perturbation theory: one BigDecimal reference orbit, all pixels in double ---
 
@@ -339,17 +285,13 @@ public class FractalRenderer {
         double[] refZi = new double[maxIterations + 1];
 
         int refEscapeIter = strategy.computeReferenceOrbit(
-            centerReal, centerImag, maxIterations, mc, refZr, refZi);
+            vp.centerReal, vp.centerImag, maxIterations, mc, refZr, refZi);
 
         // 2. Per-pixel deltas computed in double (pixel offset from center)
-        double dScaleX = scaleX.doubleValue();
-        double dScaleY = scaleY.doubleValue();
+        double dScaleX = vp.scaleX.doubleValue();
+        double dScaleY = vp.scaleY.doubleValue();
         double halfW = (width - 1) / 2.0;
         double halfH = (height - 1) / 2.0;
-
-        // For BigDecimal fallback on glitched pixels
-        BigDecimal finalMinReal = centerReal.subtract(viewReal.divide(BigDecimal.valueOf(2), mc), mc);
-        BigDecimal finalMinImag = centerImag.subtract(viewImag.divide(BigDecimal.valueOf(2), mc), mc);
 
         // 3. Interior pruning (Mariani-Silver): divide image into large blocks,
         //    iterate every boundary pixel with BigDecimal. If all boundary pixels
@@ -383,20 +325,20 @@ public class FractalRenderer {
                         for (int px = startX; px < endX && allInterior; px++) {
                             if (renderCancelled) return;
                             allInterior = isBoundaryPixelInterior(px, startY,
-                                finalMinReal, finalMinImag, scaleX, scaleY, mc);
+                                vp.minReal, vp.minImag, vp.scaleX, vp.scaleY, mc);
                             if (allInterior && endY - 1 > startY) {
                                 allInterior = isBoundaryPixelInterior(px, endY - 1,
-                                    finalMinReal, finalMinImag, scaleX, scaleY, mc);
+                                    vp.minReal, vp.minImag, vp.scaleX, vp.scaleY, mc);
                             }
                         }
                         // Left and right edges (excluding corners already checked)
                         for (int py = startY + 1; py < endY - 1 && allInterior; py++) {
                             if (renderCancelled) return;
                             allInterior = isBoundaryPixelInterior(startX, py,
-                                finalMinReal, finalMinImag, scaleX, scaleY, mc);
+                                vp.minReal, vp.minImag, vp.scaleX, vp.scaleY, mc);
                             if (allInterior && endX - 1 > startX) {
                                 allInterior = isBoundaryPixelInterior(endX - 1, py,
-                                    finalMinReal, finalMinImag, scaleX, scaleY, mc);
+                                    vp.minReal, vp.minImag, vp.scaleX, vp.scaleY, mc);
                             }
                         }
 
@@ -447,12 +389,12 @@ public class FractalRenderer {
 
                     if (iter == PerturbationStrategy.GLITCH_DETECTED) {
                         // Fallback to full BigDecimal for this pixel
-                        BigDecimal cx = finalMinReal.add(scaleX.multiply(new BigDecimal(col), mc), mc);
-                        BigDecimal cy = finalMinImag.add(scaleY.multiply(new BigDecimal(r), mc), mc);
+                        BigDecimal cx = vp.minReal.add(vp.scaleX.multiply(new BigDecimal(col), mc), mc);
+                        BigDecimal cy = vp.minImag.add(vp.scaleY.multiply(new BigDecimal(r), mc), mc);
                         iter = type.iterateBig(cx, cy, maxIterations, mc);
                     }
 
-                    rgb[idx] = colorForIter(iter, lut);
+                    rgb[idx] = mapper.colorForIter(iter);
                 }
                 bigDecimalCompletedRows.incrementAndGet();
             });
@@ -500,30 +442,14 @@ public class FractalRenderer {
         bigDecimalTotalRows = height;
         renderCancelled = false;
 
-        int[] lut = buildColorLut(gradient);
+        FractalColorMapper mapper = buildColorMapper(gradient);
 
         double zoom = 4.0 / Math.min(rangeReal.abs().doubleValue(), rangeImag.abs().doubleValue());
         int precision = 20 + (int) Math.ceil(Math.log10(Math.max(zoom, 1)));
         MathContext mc = new MathContext(precision, RoundingMode.HALF_UP);
 
-        BigDecimal bdAspect = new BigDecimal(width).divide(new BigDecimal(height), mc);
-        BigDecimal centerReal = minReal.add(maxReal, mc).divide(BigDecimal.valueOf(2), mc);
-        BigDecimal centerImag = minImag.add(maxImag, mc).divide(BigDecimal.valueOf(2), mc);
-
-        BigDecimal ratioRI = rangeReal.divide(rangeImag, mc);
-        BigDecimal viewReal, viewImag;
-        if (ratioRI.compareTo(bdAspect) > 0) {
-            viewReal = rangeReal;
-            viewImag = rangeReal.divide(bdAspect, mc);
-        } else {
-            viewImag = rangeImag;
-            viewReal = rangeImag.multiply(bdAspect, mc);
-        }
-
-        BigDecimal scaleX = viewReal.divide(new BigDecimal(width - 1), mc);
-        BigDecimal scaleY = viewImag.divide(new BigDecimal(height - 1), mc);
-        BigDecimal finalMinReal = centerReal.subtract(viewReal.divide(BigDecimal.valueOf(2), mc), mc);
-        BigDecimal finalMinImag = centerImag.subtract(viewImag.divide(BigDecimal.valueOf(2), mc), mc);
+        ViewportCalculator.BigViewport vp = ViewportCalculator.computeBig(
+                minReal, maxReal, minImag, maxImag, rangeReal, rangeImag, width, height, mc);
 
         int nThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService pool = Executors.newFixedThreadPool(nThreads);
@@ -534,11 +460,11 @@ public class FractalRenderer {
                 if (renderCancelled) return;
                 for (int col = 0; col < width; col++) {
                     if (renderCancelled) return;
-                    BigDecimal cx = finalMinReal.add(scaleX.multiply(new BigDecimal(col), mc), mc);
-                    BigDecimal cy = finalMinImag.add(scaleY.multiply(new BigDecimal(r), mc), mc);
+                    BigDecimal cx = vp.minReal.add(vp.scaleX.multiply(new BigDecimal(col), mc), mc);
+                    BigDecimal cy = vp.minImag.add(vp.scaleY.multiply(new BigDecimal(r), mc), mc);
                     int iter = type.iterateBig(cx, cy, maxIterations, mc);
                     int idx = r * width + col;
-                    rgb[idx] = colorForIter(iter, lut);
+                    rgb[idx] = mapper.colorForIter(iter);
                 }
                 bigDecimalCompletedRows.incrementAndGet();
             });

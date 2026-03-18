@@ -42,6 +42,10 @@ public class FractalRenderTest {
         testJsonParseRoundTrip();
         testGradientDefaultConsistency();
 
+        // Phase B.4 extraction tests (T2.4-T2.5)
+        testViewportCalculatorAspectRatio();
+        testColorMapperLUT();
+
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
         if (failed > 0) {
@@ -451,6 +455,76 @@ public class FractalRenderTest {
             if (c1[i].getRGB() != c2[i].getRGB()) { match = false; break; }
         }
         check("gradient default consistency (256 colors)", match);
+    }
+
+    // --- Phase B.4: Extraction tests (T2.4-T2.5) ---
+
+    /** T2.4: ViewportCalculator aspect-ratio correction and scale consistency. */
+    private static void testViewportCalculatorAspectRatio() {
+        // Square image, non-square bounds → should expand to maintain aspect
+        java.math.BigDecimal neg2 = new java.math.BigDecimal("-2");
+        java.math.BigDecimal pos1 = new java.math.BigDecimal("1");
+        java.math.BigDecimal neg1_5 = new java.math.BigDecimal("-1.5");
+        java.math.BigDecimal pos1_5 = new java.math.BigDecimal("1.5");
+
+        ViewportCalculator.DoubleViewport vp = ViewportCalculator.computeDouble(
+                neg2, pos1, neg1_5, pos1_5, 100, 100);
+        // Bounds: real range=3, imag range=3 → square, so viewReal==viewImag for square image
+        check("viewport square: viewReal==viewImag",
+              Math.abs(vp.viewReal - vp.viewImag) < 1e-10);
+        check("viewport scaleX > 0", vp.scaleX > 0);
+        check("viewport scaleY > 0", vp.scaleY > 0);
+        check("viewport tolerance > 0", vp.tolerance > 0);
+
+        // Wide image (200x100) with square bounds → viewReal should be wider
+        ViewportCalculator.DoubleViewport vpWide = ViewportCalculator.computeDouble(
+                neg2, pos1, neg1_5, pos1_5, 200, 100);
+        check("viewport wide: viewReal > viewImag", vpWide.viewReal > vpWide.viewImag);
+
+        // BigDecimal viewport should produce consistent center
+        java.math.MathContext mc = new java.math.MathContext(20);
+        java.math.BigDecimal rangeR = pos1.subtract(neg2);
+        java.math.BigDecimal rangeI = pos1_5.subtract(neg1_5);
+        ViewportCalculator.BigViewport bvp = ViewportCalculator.computeBig(
+                neg2, pos1, neg1_5, pos1_5, rangeR, rangeI, 100, 100, mc);
+        double centerR = bvp.centerReal.doubleValue();
+        double centerI = bvp.centerImag.doubleValue();
+        check("big viewport center real ~ -0.5: " + centerR, Math.abs(centerR - (-0.5)) < 1e-10);
+        check("big viewport center imag ~ 0.0: " + centerI, Math.abs(centerI) < 1e-10);
+
+        // Double and BigDecimal viewports should agree on scale for the same inputs
+        double dScaleX = bvp.scaleX.doubleValue();
+        check("double and big scaleX agree",
+              Math.abs(vp.scaleX - dScaleX) / Math.max(vp.scaleX, 1e-20) < 1e-10);
+    }
+
+    /** T2.5: ColorMapper LUT construction and color mapping. */
+    private static void testColorMapperLUT() {
+        ColorGradient g = gradient();
+
+        // MOD mode: cyclic wrapping
+        FractalColorMapper modMapper = new FractalColorMapper(g, 256,
+                FractalRenderer.ColorMode.MOD);
+        int[] modLut = modMapper.getLut();
+        check("mod LUT size is 64", modLut.length == 64);
+        // iter 0 and iter 64 should map to same color (cyclic)
+        check("mod mapper cyclic: iter 0 == iter 64",
+              modMapper.colorForIter(0) == modMapper.colorForIter(64));
+        // maxIterations → black
+        check("mod mapper maxIter → black",
+              modMapper.colorForIter(256) == Color.BLACK.getRGB());
+
+        // DIVISION mode: linear mapping
+        FractalColorMapper divMapper = new FractalColorMapper(g, 256,
+                FractalRenderer.ColorMode.DIVISION);
+        int[] divLut = divMapper.getLut();
+        check("division LUT size is 256", divLut.length == 256);
+        // maxIterations → black
+        check("division mapper maxIter → black",
+              divMapper.colorForIter(256) == Color.BLACK.getRGB());
+        // iter 0 should match first gradient color
+        check("division mapper iter 0 matches gradient start",
+              divMapper.colorForIter(0) == modMapper.colorForIter(0));
     }
 
     // --- Helpers ---
