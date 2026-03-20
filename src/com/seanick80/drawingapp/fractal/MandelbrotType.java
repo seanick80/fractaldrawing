@@ -6,6 +6,10 @@ import java.math.MathContext;
 /** Mandelbrot set: z_{n+1} = z_n^2 + c, starting at z_0 = 0. */
 public final class MandelbrotType implements FractalType {
 
+    private static final BigDecimal FOUR = BigDecimal.valueOf(4);
+    private static final BigDecimal TWO = BigDecimal.valueOf(2);
+    private static final PerturbationStrategy PERTURBATION = new MandelbrotPerturbation();
+
     @Override public String name() { return "MANDELBROT"; }
 
     @Override
@@ -23,13 +27,11 @@ public final class MandelbrotType implements FractalType {
     @Override
     public int iterateBig(BigDecimal cx, BigDecimal cy, int maxIter, MathContext mc) {
         BigDecimal zr = BigDecimal.ZERO, zi = BigDecimal.ZERO;
-        BigDecimal four = new BigDecimal(4);
-        BigDecimal two = new BigDecimal(2);
         for (int i = 0; i < maxIter; i++) {
             BigDecimal zr2 = zr.multiply(zr, mc);
             BigDecimal zi2 = zi.multiply(zi, mc);
-            if (zr2.add(zi2, mc).compareTo(four) > 0) return i;
-            zi = two.multiply(zr, mc).multiply(zi, mc).add(cy, mc);
+            if (zr2.add(zi2, mc).compareTo(FOUR) > 0) return i;
+            zi = TWO.multiply(zr, mc).multiply(zi, mc).add(cy, mc);
             zr = zr2.subtract(zi2, mc).add(cx, mc);
         }
         return maxIter;
@@ -40,7 +42,7 @@ public final class MandelbrotType implements FractalType {
 
     @Override
     public PerturbationStrategy getPerturbationStrategy() {
-        return new MandelbrotPerturbation();
+        return PERTURBATION;
     }
 
     @Override public String toString() { return name(); }

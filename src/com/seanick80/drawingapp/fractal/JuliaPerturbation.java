@@ -10,6 +10,9 @@ import java.math.MathContext;
  */
 public final class JuliaPerturbation implements PerturbationStrategy {
 
+    private static final BigDecimal FOUR = BigDecimal.valueOf(4);
+    private static final BigDecimal TWO = BigDecimal.valueOf(2);
+
     private final BigDecimal cr, ci;
 
     public JuliaPerturbation(BigDecimal cr, BigDecimal ci) {
@@ -22,8 +25,6 @@ public final class JuliaPerturbation implements PerturbationStrategy {
                                       int maxIter, MathContext mc,
                                       double[] outZr, double[] outZi) {
         BigDecimal zr = z0r, zi = z0i;
-        BigDecimal four = BigDecimal.valueOf(4);
-        BigDecimal two = BigDecimal.valueOf(2);
         double dCr = cr.doubleValue(), dCi = ci.doubleValue();
         int escapeIter = maxIter;
         for (int i = 0; i < maxIter; i++) {
@@ -39,7 +40,7 @@ public final class JuliaPerturbation implements PerturbationStrategy {
             }
             BigDecimal zr2 = zr.multiply(zr, mc);
             BigDecimal zi2 = zi.multiply(zi, mc);
-            if (zr2.add(zi2, mc).compareTo(four) > 0) {
+            if (zr2.add(zi2, mc).compareTo(FOUR) > 0) {
                 escapeIter = i;
                 double dzr = zr.doubleValue(), dzi = zi.doubleValue();
                 double dzr2 = dzr * dzr, dzi2 = dzi * dzi;
@@ -48,7 +49,7 @@ public final class JuliaPerturbation implements PerturbationStrategy {
                 outZi[i + 1] = newDzi;
                 continue;
             }
-            BigDecimal newZi = two.multiply(zr, mc).multiply(zi, mc).add(ci, mc);
+            BigDecimal newZi = TWO.multiply(zr, mc).multiply(zi, mc).add(ci, mc);
             zr = zr2.subtract(zi2, mc).add(cr, mc);
             zi = newZi;
         }

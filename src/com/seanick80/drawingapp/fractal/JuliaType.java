@@ -6,14 +6,19 @@ import java.math.MathContext;
 /** Julia set: z_{n+1} = z_n^2 + c, where c is a fixed constant and z_0 = pixel coordinate. */
 public final class JuliaType implements FractalType {
 
+    private static final BigDecimal FOUR = BigDecimal.valueOf(4);
+    private static final BigDecimal TWO = BigDecimal.valueOf(2);
+
     private final double cr, ci;
     private final BigDecimal crBig, ciBig;
+    private final PerturbationStrategy perturbation;
 
     public JuliaType(double cr, double ci) {
         this.cr = cr;
         this.ci = ci;
         this.crBig = new BigDecimal(Double.toString(cr));
         this.ciBig = new BigDecimal(Double.toString(ci));
+        this.perturbation = new JuliaPerturbation(crBig, ciBig);
     }
 
     public JuliaType(BigDecimal cr, BigDecimal ci) {
@@ -21,6 +26,7 @@ public final class JuliaType implements FractalType {
         this.ci = ci.doubleValue();
         this.crBig = cr;
         this.ciBig = ci;
+        this.perturbation = new JuliaPerturbation(cr, ci);
     }
 
     public double getCr() { return cr; }
@@ -44,14 +50,12 @@ public final class JuliaType implements FractalType {
 
     @Override
     public int iterateBig(BigDecimal zr, BigDecimal zi, int maxIter, MathContext mc) {
-        BigDecimal four = new BigDecimal(4);
-        BigDecimal two = new BigDecimal(2);
         for (int i = 0; i < maxIter; i++) {
             BigDecimal zr2 = zr.multiply(zr, mc);
             BigDecimal zi2 = zi.multiply(zi, mc);
-            if (zr2.add(zi2, mc).compareTo(four) > 0) return i;
+            if (zr2.add(zi2, mc).compareTo(FOUR) > 0) return i;
             BigDecimal newZr = zr2.subtract(zi2, mc).add(crBig, mc);
-            zi = two.multiply(zr, mc).multiply(zi, mc).add(ciBig, mc);
+            zi = TWO.multiply(zr, mc).multiply(zi, mc).add(ciBig, mc);
             zr = newZr;
         }
         return maxIter;
@@ -62,7 +66,7 @@ public final class JuliaType implements FractalType {
 
     @Override
     public PerturbationStrategy getPerturbationStrategy() {
-        return new JuliaPerturbation(crBig, ciBig);
+        return perturbation;
     }
 
     @Override public String toString() { return name(); }

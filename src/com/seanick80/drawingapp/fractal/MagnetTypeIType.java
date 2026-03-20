@@ -12,6 +12,10 @@ public final class MagnetTypeIType implements FractalType {
 
     private static final double BAILOUT = 100.0;
     private static final double CONVERGENCE_EPSILON = 1e-6;
+    private static final BigDecimal BD_BAILOUT = BigDecimal.valueOf(BAILOUT);
+    private static final BigDecimal BD_EPSILON = new BigDecimal("0.000001");
+    private static final BigDecimal BD_TWO = BigDecimal.valueOf(2);
+    private static final BigDecimal BD_DENOM_MIN = new BigDecimal("1E-30");
 
     @Override public String name() { return "MAGNET_I"; }
 
@@ -51,31 +55,27 @@ public final class MagnetTypeIType implements FractalType {
     @Override
     public int iterateBig(BigDecimal cx, BigDecimal cy, int maxIter, MathContext mc) {
         BigDecimal zr = BigDecimal.ZERO, zi = BigDecimal.ZERO;
-        BigDecimal bailout = BigDecimal.valueOf(BAILOUT);
-        BigDecimal epsilon = new BigDecimal("0.000001");
-        BigDecimal one = BigDecimal.ONE;
-        BigDecimal two = BigDecimal.valueOf(2);
 
         for (int i = 0; i < maxIter; i++) {
             BigDecimal zr2 = zr.multiply(zr, mc);
             BigDecimal zi2 = zi.multiply(zi, mc);
-            if (zr2.add(zi2, mc).compareTo(bailout) > 0) return i;
+            if (zr2.add(zi2, mc).compareTo(BD_BAILOUT) > 0) return i;
 
             // Convergence check: |z - 1|^2 < epsilon
-            BigDecimal dr = zr.subtract(one, mc);
-            if (dr.multiply(dr, mc).add(zi2, mc).compareTo(epsilon) < 0) return maxIter;
+            BigDecimal dr = zr.subtract(BigDecimal.ONE, mc);
+            if (dr.multiply(dr, mc).add(zi2, mc).compareTo(BD_EPSILON) < 0) return maxIter;
 
             // Numerator: z^2 + c - 1
-            BigDecimal nr = zr2.subtract(zi2, mc).add(cx, mc).subtract(one, mc);
-            BigDecimal ni = two.multiply(zr, mc).multiply(zi, mc).add(cy, mc);
+            BigDecimal nr = zr2.subtract(zi2, mc).add(cx, mc).subtract(BigDecimal.ONE, mc);
+            BigDecimal ni = BD_TWO.multiply(zr, mc).multiply(zi, mc).add(cy, mc);
 
             // Denominator: 2z + c - 2
-            BigDecimal ddr = two.multiply(zr, mc).add(cx, mc).subtract(two, mc);
-            BigDecimal ddi = two.multiply(zi, mc).add(cy, mc);
+            BigDecimal ddr = BD_TWO.multiply(zr, mc).add(cx, mc).subtract(BD_TWO, mc);
+            BigDecimal ddi = BD_TWO.multiply(zi, mc).add(cy, mc);
 
             // |d|^2
             BigDecimal denomSq = ddr.multiply(ddr, mc).add(ddi.multiply(ddi, mc), mc);
-            if (denomSq.compareTo(new BigDecimal("1E-30")) < 0) return maxIter;
+            if (denomSq.compareTo(BD_DENOM_MIN) < 0) return maxIter;
 
             // Complex division n/d
             BigDecimal qr = nr.multiply(ddr, mc).add(ni.multiply(ddi, mc), mc)
@@ -85,7 +85,7 @@ public final class MagnetTypeIType implements FractalType {
 
             // Square: (n/d)^2
             zr = qr.multiply(qr, mc).subtract(qi.multiply(qi, mc), mc);
-            zi = two.multiply(qr, mc).multiply(qi, mc);
+            zi = BD_TWO.multiply(qr, mc).multiply(qi, mc);
         }
         return maxIter;
     }

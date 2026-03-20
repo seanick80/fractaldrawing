@@ -9,6 +9,9 @@ import java.math.MathContext;
  */
 public final class BurningShipType implements FractalType {
 
+    private static final BigDecimal FOUR = BigDecimal.valueOf(4);
+    private static final BigDecimal TWO = BigDecimal.valueOf(2);
+
     @Override public String name() { return "BURNING_SHIP"; }
 
     @Override
@@ -27,14 +30,12 @@ public final class BurningShipType implements FractalType {
     @Override
     public int iterateBig(BigDecimal cx, BigDecimal cy, int maxIter, MathContext mc) {
         BigDecimal zr = BigDecimal.ZERO, zi = BigDecimal.ZERO;
-        BigDecimal four = BigDecimal.valueOf(4);
-        BigDecimal two = BigDecimal.valueOf(2);
         for (int i = 0; i < maxIter; i++) {
             BigDecimal zr2 = zr.multiply(zr, mc);
             BigDecimal zi2 = zi.multiply(zi, mc);
-            if (zr2.add(zi2, mc).compareTo(four) > 0) return i;
+            if (zr2.add(zi2, mc).compareTo(FOUR) > 0) return i;
             BigDecimal newZr = zr2.subtract(zi2, mc).add(cx, mc);
-            zi = two.multiply(zr, mc).multiply(zi, mc).abs().add(cy, mc);
+            zi = TWO.multiply(zr, mc).multiply(zi, mc).abs().add(cy, mc);
             zr = newZr;
         }
         return maxIter;
