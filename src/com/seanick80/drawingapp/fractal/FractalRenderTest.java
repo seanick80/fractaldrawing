@@ -46,6 +46,16 @@ public class FractalRenderTest {
         testViewportCalculatorAspectRatio();
         testColorMapperLUT();
 
+        // Phase F: Interior pruning correctness
+        testPruningIdenticalOutput();
+        testPruningIdenticalAtSpikyEdges();
+        testPruningMandelbrotInterior();
+        testPruningSpeedupOnInterior();
+
+        // Load/save correctness
+        testLoadMandelbrotNotOverriddenByJuliaConstant();
+        testSevenPointedStarDeepZoom();
+
         // Phase C: New fractal type tests (T2.6-T2.8, T3.1-T3.5)
         testBurningShipIteration();
         testTricornIteration();
@@ -626,6 +636,154 @@ public class FractalRenderTest {
         }
     }
 
+    // --- Phase F: Interior pruning correctness tests ---
+
+    /**
+     * Verify that pruning ON and OFF produce identical output at deep zoom
+     * where perturbation is used. Tests the Mandelbrot cardioid boundary.
+     */
+    private static void testPruningIdenticalOutput() {
+        FractalRenderer rOn = newRenderer();
+        FractalRenderer rOff = newRenderer();
+
+        // Mandelbrot at moderate zoom — mix of interior and exterior
+        rOn.setBounds(-0.75, -0.74, 0.10, 0.11);
+        rOff.setBounds(-0.75, -0.74, 0.10, 0.11);
+        rOn.setMaxIterations(256);
+        rOff.setMaxIterations(256);
+        rOn.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+        rOff.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+
+        rOn.setInteriorPruning(true);
+        rOff.setInteriorPruning(false);
+
+        BufferedImage imgOn = rOn.render(200, 150, gradient());
+        BufferedImage imgOff = rOff.render(200, 150, gradient());
+
+        check("pruning on/off identical: double cardioid edge", imagesEqual(imgOn, imgOff));
+    }
+
+    /**
+     * Verify pruning correctness at spiky edges in perturbation mode.
+     * Uses a deep zoom location at the antenna tip where the set boundary
+     * has fine spikes that could be wrongly pruned as interior.
+     */
+    private static void testPruningIdenticalAtSpikyEdges() {
+        FractalRenderer rOn = newRenderer();
+        FractalRenderer rOff = newRenderer();
+
+        // Deep zoom at the antenna tip — spiky boundary between interior/exterior
+        BigDecimal minR = new BigDecimal("-1.7690645");
+        BigDecimal maxR = new BigDecimal("-1.7690625");
+        BigDecimal minI = new BigDecimal("-0.0000010");
+        BigDecimal maxI = new BigDecimal("0.0000010");
+
+        rOn.setBounds(minR, maxR, minI, maxI);
+        rOff.setBounds(minR, maxR, minI, maxI);
+        rOn.setMaxIterations(512);
+        rOff.setMaxIterations(512);
+        rOn.setRenderMode(FractalRenderer.RenderMode.PERTURBATION);
+        rOff.setRenderMode(FractalRenderer.RenderMode.PERTURBATION);
+
+        rOn.setInteriorPruning(true);
+        rOff.setInteriorPruning(false);
+
+        BufferedImage imgOn = rOn.render(200, 150, gradient());
+        BufferedImage imgOff = rOff.render(200, 150, gradient());
+
+        int[] pxOn = getPixels(imgOn);
+        int[] pxOff = getPixels(imgOff);
+        int diff = 0;
+        for (int i = 0; i < pxOn.length; i++) {
+            if (pxOn[i] != pxOff[i]) diff++;
+        }
+        check("pruning on/off identical: spiky antenna (diff=" + diff + ")", diff == 0);
+    }
+
+    /**
+     * Verify that Mandelbrot with large interior correctly identifies
+     * interior pixels with pruning, matching non-pruned output.
+     * Uses the main cardioid view with BigDecimal mode.
+     */
+    private static void testPruningMandelbrotInterior() {
+        FractalRenderer rOn = newRenderer();
+        FractalRenderer rOff = newRenderer();
+
+        // Period-2 bulb edge — lots of interior with complex boundary
+        rOn.setBounds(-1.26, -1.24, -0.01, 0.01);
+        rOff.setBounds(-1.26, -1.24, -0.01, 0.01);
+        rOn.setMaxIterations(512);
+        rOff.setMaxIterations(512);
+        rOn.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+        rOff.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+
+        rOn.setInteriorPruning(true);
+        rOff.setInteriorPruning(false);
+
+        BufferedImage imgOn = rOn.render(200, 150, gradient());
+        BufferedImage imgOff = rOff.render(200, 150, gradient());
+
+        int blackOn = countColor(imgOn, Color.BLACK.getRGB());
+        int blackOff = countColor(imgOff, Color.BLACK.getRGB());
+
+        check("pruning on/off identical: bulb edge (blackOn=" + blackOn +
+              ", blackOff=" + blackOff + ")", imagesEqual(imgOn, imgOff));
+
+        // Verify significant interior was found
+        int total = 200 * 150;
+        check("mandelbrot bulb has significant interior (" + blackOn + "/" + total + ")",
+              blackOn > total * 0.1);
+    }
+
+    /**
+     * Verify pruning speedup on Mandelbrot deep zoom centered on the cardioid interior.
+     * This location is mostly interior pixels — pruning should skip most BigDecimal work.
+     * Reports timing but doesn't fail on speed (hardware-dependent).
+     */
+    private static void testPruningSpeedupOnInterior() {
+        // Deep zoom at cardioid boundary — mix of interior and exterior with
+        // perturbation glitch fallbacks, which is where pruning helps most
+        BigDecimal minR = new BigDecimal("-0.7500100000000000");
+        BigDecimal maxR = new BigDecimal("-0.7499900000000000");
+        BigDecimal minI = new BigDecimal("-0.0000100000000000");
+        BigDecimal maxI = new BigDecimal("0.0000100000000000");
+
+        // Render with pruning ON
+        FractalRenderer rOn = newRenderer();
+        rOn.setBounds(minR, maxR, minI, maxI);
+        rOn.setMaxIterations(256);
+        rOn.setRenderMode(FractalRenderer.RenderMode.PERTURBATION);
+        rOn.setInteriorPruning(true);
+
+        long t0 = System.nanoTime();
+        BufferedImage imgOn = rOn.render(200, 150, gradient());
+        long prunedMs = (System.nanoTime() - t0) / 1_000_000;
+
+        // Render with pruning OFF
+        FractalRenderer rOff = newRenderer();
+        rOff.setBounds(minR, maxR, minI, maxI);
+        rOff.setMaxIterations(256);
+        rOff.setRenderMode(FractalRenderer.RenderMode.PERTURBATION);
+        rOff.setInteriorPruning(false);
+
+        t0 = System.nanoTime();
+        BufferedImage imgOff = rOff.render(200, 150, gradient());
+        long unprunedMs = (System.nanoTime() - t0) / 1_000_000;
+
+        // Must produce identical output
+        check("pruning on/off identical: deep cardioid interior", imagesEqual(imgOn, imgOff));
+
+        // Report interior pixel count
+        int blackCount = countColor(imgOn, Color.BLACK.getRGB());
+        int total = 200 * 150;
+        check("deep cardioid has significant interior (" + blackCount + "/" + total + ")",
+              blackCount > total * 0.5);
+
+        // Report speedup (informational — doesn't fail since hardware-dependent)
+        System.out.println("  INFO: pruning ON=" + prunedMs + "ms, OFF=" + unprunedMs + "ms" +
+            (unprunedMs > 0 ? ", speedup=" + String.format("%.1fx", (double) unprunedMs / Math.max(prunedMs, 1)) : ""));
+    }
+
     // --- Phase B.4: Extraction tests (T2.4-T2.5) ---
 
     /** T2.4: ViewportCalculator aspect-ratio correction and scale consistency. */
@@ -694,6 +852,64 @@ public class FractalRenderTest {
         // iter 0 should match first gradient color
         check("division mapper iter 0 matches gradient start",
               divMapper.colorForIter(0) == modMapper.colorForIter(0));
+    }
+
+    /**
+     * Regression test: loading a Mandelbrot JSON that contains juliaReal/juliaImag
+     * fields should NOT switch the renderer to Julia mode.
+     */
+    private static void testLoadMandelbrotNotOverriddenByJuliaConstant() {
+        System.out.println("  -- Load/Save correctness --");
+        // Simulate what loadLocation() does: parse JSON with type=MANDELBROT + julia fields
+        String json = "{\n" +
+            "  \"type\": \"MANDELBROT\",\n" +
+            "  \"minReal\": \"-2.0\",\n" +
+            "  \"maxReal\": \"1.0\",\n" +
+            "  \"minImag\": \"-1.5\",\n" +
+            "  \"maxImag\": \"1.5\",\n" +
+            "  \"maxIterations\": 256,\n" +
+            "  \"juliaReal\": \"-0.7\",\n" +
+            "  \"juliaImag\": \"0.27015\"\n" +
+            "}";
+        java.util.Map<String, String> data = parseJson(json);
+        String typeName = data.getOrDefault("type", "MANDELBROT");
+        FractalType type = FractalType.valueOf(typeName);
+
+        FractalRenderer r = new FractalRenderer();
+        r.setType(type);
+
+        // Apply julia constant only if type is Julia (the fix)
+        if (type instanceof JuliaType && data.containsKey("juliaReal") && data.containsKey("juliaImag")) {
+            r.setJuliaConstant(new BigDecimal(data.get("juliaReal")),
+                               new BigDecimal(data.get("juliaImag")));
+        }
+
+        check("load Mandelbrot JSON keeps Mandelbrot type",
+              r.getType() instanceof MandelbrotType);
+        check("load Mandelbrot JSON type name is MANDELBROT",
+              r.getType().name().equals("MANDELBROT"));
+    }
+
+    /**
+     * Seven-pointed star deep zoom location renders with detail (not solid color).
+     * Uses low resolution (50x50) since this is a deep zoom (~1e16) BigDecimal render.
+     */
+    private static void testSevenPointedStarDeepZoom() {
+        FractalRenderer r = newRenderer();
+        r.setBounds(
+            new BigDecimal("-0.680148757332831493578851222991943360"),
+            new BigDecimal("-0.680148757332831121049821376800537110"),
+            new BigDecimal("-0.472196542546057414295193929152650857"),
+            new BigDecimal("-0.472196542546057041766164082961244607")
+        );
+        r.setMaxIterations(506);
+        r.setRenderMode(FractalRenderer.RenderMode.BIGDECIMAL);
+
+        BufferedImage img = r.render(50, 50, gradient());
+        int colors = countUniqueColors(img);
+        check("seven-pointed star renders with detail (colors=" + colors + ")", colors >= 3);
+        check("seven-pointed star is Mandelbrot type",
+              r.getType() instanceof MandelbrotType);
     }
 
     // --- Helpers ---

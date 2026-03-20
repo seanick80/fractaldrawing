@@ -3,6 +3,7 @@ package com.seanick80.drawingapp.tools;
 import com.seanick80.drawingapp.DrawingCanvas;
 import com.seanick80.drawingapp.fractal.FractalRenderer;
 import com.seanick80.drawingapp.fractal.FractalType;
+import com.seanick80.drawingapp.fractal.JuliaType;
 import com.seanick80.drawingapp.fractal.FractalTypeRegistry;
 import com.seanick80.drawingapp.gradient.ColorGradient;
 import com.seanick80.drawingapp.gradient.GradientEditorDialog;
@@ -523,7 +524,8 @@ public class FractalTool implements Tool {
                 if (iterSpinner != null) iterSpinner.setValue(iters);
             }
 
-            if (data.containsKey("juliaReal") && data.containsKey("juliaImag")) {
+            if (type instanceof JuliaType
+                    && data.containsKey("juliaReal") && data.containsKey("juliaImag")) {
                 renderer.setJuliaConstant(
                     new BigDecimal(data.get("juliaReal")),
                     new BigDecimal(data.get("juliaImag")));

@@ -116,7 +116,18 @@ public class FractalRenderer {
         this.maxReal = maxReal;
         this.minImag = minImag;
         this.maxImag = maxImag;
-        if (changed) cache.clear();
+        if (changed) {
+            // Prune cache entries outside the new viewport (with margin) instead of clearing
+            double margin = 2.0; // keep entries within 2x the viewport for future pans
+            double viewW = maxReal.subtract(minReal).abs().doubleValue();
+            double viewH = maxImag.subtract(minImag).abs().doubleValue();
+            cache.pruneOutside(
+                minReal.doubleValue() - viewW * margin,
+                maxReal.doubleValue() + viewW * margin,
+                minImag.doubleValue() - viewH * margin,
+                maxImag.doubleValue() + viewH * margin
+            );
+        }
     }
 
     public double getJuliaReal() {
@@ -292,7 +303,11 @@ public class FractalRenderer {
                                            BigDecimal rangeReal, BigDecimal rangeImag) {
         ensureBuffers(width, height);
         int[] rgb = renderRgb;
+        int[] iters = renderIters;
+        boolean[] cacheHit = renderCacheHit;
         java.util.Arrays.fill(rgb, 0);
+        java.util.Arrays.fill(iters, 0);
+        java.util.Arrays.fill(cacheHit, false);
         progressiveRgb = rgb;
         bigDecimalCompletedRows.set(0);
         bigDecimalTotalRows = height;
@@ -335,6 +350,9 @@ public class FractalRenderer {
         for (int row = 0; row < height; row++) {
             pixelCy[row] = vp.minImag.add(vp.scaleY.multiply(BigDecimal.valueOf(row), mc), mc);
         }
+
+        double cacheTolerance = Math.min(dScaleX, dScaleY) * 0.1;
+        cache.resetStats();
 
         // 3. Hierarchical interior pruning: recursively subdivide the image into blocks.
         //    If a block's boundary pixels are all interior (maxIterations), skip the
@@ -390,13 +408,25 @@ public class FractalRenderer {
                     double dcr = (col - halfW) * dScaleX;
                     int idx = r * width + col;
 
-                    int iter = strategy.perturbIterate(refZr, refZi, dcr, dci, refEscapeIter, maxIterations);
+                    // Check cache first (coordinates in complex plane)
+                    double cx = pixelCx[col].doubleValue();
+                    double cy = pixelCy[r].doubleValue();
+                    int iter = cache.lookup(cx, cy, cacheTolerance);
+                    if (iter != IterationQuadTree.CACHE_MISS) {
+                        cacheHit[idx] = true;
+                        iters[idx] = iter;
+                        rgb[idx] = mapper.colorForIter(iter);
+                        continue;
+                    }
+
+                    iter = strategy.perturbIterate(refZr, refZi, dcr, dci, refEscapeIter, maxIterations);
 
                     if (iter == PerturbationStrategy.GLITCH_DETECTED) {
                         // Fallback to full BigDecimal for this pixel
                         iter = type.iterateBig(pixelCx[col], pixelCy[r], maxIterations, mc);
                     }
 
+                    iters[idx] = iter;
                     rgb[idx] = mapper.colorForIter(iter);
                 }
                 bigDecimalCompletedRows.incrementAndGet();
@@ -416,6 +446,24 @@ public class FractalRenderer {
             renderCancelled = true;
             pool.shutdownNow();
             Thread.currentThread().interrupt();
+        }
+
+        // Insert newly computed pixels into cache (sequential — cache is not thread-safe for writes)
+        if (!renderCancelled) {
+            for (int i = 0; i < width * height; i++) {
+                if (!interiorPixel[i] && !cacheHit[i]) {
+                    double cx = pixelCx[i % width].doubleValue();
+                    double cy = pixelCy[i / width].doubleValue();
+                    cache.insert(cx, cy, iters[i]);
+                }
+            }
+
+            double viewW = rangeReal.abs().doubleValue();
+            double viewH = rangeImag.abs().doubleValue();
+            cache.pruneOutside(
+                minReal.doubleValue() - viewW, maxReal.doubleValue() + viewW,
+                minImag.doubleValue() - viewH, maxImag.doubleValue() + viewH
+            );
         }
 
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
@@ -531,7 +579,11 @@ public class FractalRenderer {
                                                 BigDecimal rangeReal, BigDecimal rangeImag) {
         ensureBuffers(width, height);
         int[] rgb = renderRgb;
+        int[] iters = renderIters;
+        boolean[] cacheHit = renderCacheHit;
         java.util.Arrays.fill(rgb, 0);
+        java.util.Arrays.fill(iters, 0);
+        java.util.Arrays.fill(cacheHit, false);
         progressiveRgb = rgb;
         bigDecimalCompletedRows.set(0);
         bigDecimalTotalRows = height;
@@ -556,6 +608,11 @@ public class FractalRenderer {
             pxCy[row] = vp.minImag.add(vp.scaleY.multiply(BigDecimal.valueOf(row), mc), mc);
         }
 
+        double dScaleX = vp.scaleX.doubleValue();
+        double dScaleY = vp.scaleY.doubleValue();
+        double cacheTolerance = Math.min(dScaleX, dScaleY) * 0.1;
+        cache.resetStats();
+
         int nThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService pool = Executors.newFixedThreadPool(nThreads);
 
@@ -565,8 +622,21 @@ public class FractalRenderer {
                 if (renderCancelled) return;
                 for (int col = 0; col < width; col++) {
                     if (renderCancelled) return;
-                    int iter = type.iterateBig(pxCx[col], pxCy[r], maxIterations, mc);
                     int idx = r * width + col;
+
+                    // Check cache first
+                    double cx = pxCx[col].doubleValue();
+                    double cy = pxCy[r].doubleValue();
+                    int iter = cache.lookup(cx, cy, cacheTolerance);
+                    if (iter != IterationQuadTree.CACHE_MISS) {
+                        cacheHit[idx] = true;
+                        iters[idx] = iter;
+                        rgb[idx] = mapper.colorForIter(iter);
+                        continue;
+                    }
+
+                    iter = type.iterateBig(pxCx[col], pxCy[r], maxIterations, mc);
+                    iters[idx] = iter;
                     rgb[idx] = mapper.colorForIter(iter);
                 }
                 bigDecimalCompletedRows.incrementAndGet();
@@ -586,6 +656,24 @@ public class FractalRenderer {
             renderCancelled = true;
             pool.shutdownNow();
             Thread.currentThread().interrupt();
+        }
+
+        // Insert newly computed pixels into cache (sequential — cache is not thread-safe for writes)
+        if (!renderCancelled) {
+            for (int i = 0; i < width * height; i++) {
+                if (!cacheHit[i]) {
+                    double cx = pxCx[i % width].doubleValue();
+                    double cy = pxCy[i / width].doubleValue();
+                    cache.insert(cx, cy, iters[i]);
+                }
+            }
+
+            double viewW = rangeReal.abs().doubleValue();
+            double viewH = rangeImag.abs().doubleValue();
+            cache.pruneOutside(
+                minReal.doubleValue() - viewW, maxReal.doubleValue() + viewW,
+                minImag.doubleValue() - viewH, maxImag.doubleValue() + viewH
+            );
         }
 
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);

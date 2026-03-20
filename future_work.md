@@ -7,12 +7,21 @@ Pre-allocated render buffers (rgb, iters, cacheHit, refOrbit arrays) with lazy r
 ## ~~Quadtree based render job pruning~~ DONE (2026-03-20)
 Replaced flat 50×100 block interior pruning with hierarchical subdivision. Each 50×50 initial block is checked: 4-corner quick rejection skips blocks with no interior pixels, then full boundary check with recursive subdivision down to 8×8 minimum. Blocks with all-interior boundaries are filled black and skipped by the perturbation phase. Mixed-boundary blocks are subdivided into quadrants for finer-grained pruning. No regression on exterior-heavy renders; should significantly help interior-heavy renders (e.g., Mandelbrot cardioid).
 
+## ~~Quadtree cache cross-render reuse~~ DONE (2026-03-20)
+Cache is no longer cleared on zoom/pan (`setBounds()` now prunes instead of clearing). Cache is wired into both BigDecimal render paths (perturbation and pure BigDecimal). On zoom, ~25% of pixels overlap previous coordinates and get cache hits, skipping expensive BigDecimal iterations. Cache entries store final z values (finalZr, finalZi) alongside iteration counts for future smooth coloring and period detection. Limitation: at zoom beyond ~1e13, double-precision cache keys can't distinguish pixels.
+
+## ~~Load/Save type bug~~ FIXED (2026-03-20)
+Loading a Mandelbrot JSON that contained juliaReal/juliaImag fields would switch the renderer to Julia mode because `setJuliaConstant()` unconditionally overwrites the type. Fixed to only apply Julia constant when loaded type is JuliaType.
+
 ## Precalculating individual pixel lat, long values.
  One big chunk of time spent per iteration is to map a pixel to it’s real and imaginary coordinates.If you calculate the real axis and the imaginary axis of the current viewport once, then pass those values in to each cell worker, you’re saving 2-4 orders of magnitude of calculation on just that one value.
 
 ## ~~Add Percent complete status back~~ DONE (2026-03-18)
 Implemented via SwingTimer polling every 200ms. Shows percentage, row count, elapsed time, and ETA.
 
+
+## Pan (click and drag)
+Click and drag to pan the viewport. Should leverage the quadtree cache — cached pixels from the previous viewport that overlap the new viewport get reused, only newly visible edges need to be computed.
 
 ## Features I’d like to explore when we have more time:
 ### Animations

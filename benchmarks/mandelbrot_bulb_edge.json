@@ -1,0 +1,8 @@
+{
+  "type": "MANDELBROT",
+  "minReal": "-1.26",
+  "maxReal": "-1.24",
+  "minImag": "-0.01",
+  "maxImag": "0.01",
+  "maxIterations": 512
+}

@@ -11,6 +11,18 @@ public class IterationQuadTree {
     private static final int MAX_DEPTH = 50;
     private static final int MAX_SIZE = 5_000_000;
 
+    /** Result of a full cache lookup, including the final z values after iteration. */
+    public static class CacheResult {
+        public final int iterationCount;
+        public final double finalZr;
+        public final double finalZi;
+        public CacheResult(int iterationCount, double finalZr, double finalZi) {
+            this.iterationCount = iterationCount;
+            this.finalZr = finalZr;
+            this.finalZi = finalZi;
+        }
+    }
+
     private Node root;
     private int size;
     private int hits;
@@ -88,14 +100,64 @@ public class IterationQuadTree {
     }
 
     /**
-     * Insert a computed iteration count for the given complex coordinate.
+     * Look up a cached result including final z values near (real, imag).
+     * Returns a CacheResult on hit, or null on miss.
      */
-    public void insert(double real, double imag, int iterationCount) {
-        if (size >= MAX_SIZE) return; // hard cap
-        root = insert(root, real, imag, iterationCount, 0);
+    public CacheResult lookupFull(double real, double imag, double tolerance) {
+        lookups++;
+        CacheResult result = lookupFull(root, real, imag, tolerance);
+        if (result != null) hits++;
+        return result;
     }
 
-    private Node insert(Node node, double real, double imag, int iterationCount, int depth) {
+    private CacheResult lookupFull(Node node, double real, double imag, double tolerance) {
+        if (node == null) return null;
+
+        if (real < node.centerReal - node.halfSize - tolerance ||
+            real > node.centerReal + node.halfSize + tolerance ||
+            imag < node.centerImag - node.halfSize - tolerance ||
+            imag > node.centerImag + node.halfSize + tolerance) {
+            return null;
+        }
+
+        if (node.hasData) {
+            if (Math.abs(real - node.pointReal) <= tolerance &&
+                Math.abs(imag - node.pointImag) <= tolerance) {
+                return new CacheResult(node.iterationCount, node.finalZr, node.finalZi);
+            }
+            return null;
+        }
+
+        int quadrant = node.quadrantFor(real, imag);
+        CacheResult result = lookupFull(node.child(quadrant), real, imag, tolerance);
+        if (result != null) return result;
+
+        for (int q = 0; q < 4; q++) {
+            if (q == quadrant) continue;
+            result = lookupFull(node.child(q), real, imag, tolerance);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    /**
+     * Insert a computed iteration count for the given complex coordinate.
+     * Stores finalZr=0, finalZi=0 for backward compatibility.
+     */
+    public void insert(double real, double imag, int iterationCount) {
+        insert(real, imag, iterationCount, 0.0, 0.0);
+    }
+
+    /**
+     * Insert a computed iteration count and final z values for the given complex coordinate.
+     */
+    public void insert(double real, double imag, int iterationCount, double finalZr, double finalZi) {
+        if (size >= MAX_SIZE) return; // hard cap
+        root = insert(root, real, imag, iterationCount, finalZr, finalZi, 0);
+    }
+
+    private Node insert(Node node, double real, double imag, int iterationCount,
+                         double finalZr, double finalZi, int depth) {
         if (node == null) {
             // Should not happen with proper root, but just in case
             return null;
@@ -106,6 +168,8 @@ public class IterationQuadTree {
             node.pointReal = real;
             node.pointImag = imag;
             node.iterationCount = iterationCount;
+            node.finalZr = finalZr;
+            node.finalZi = finalZi;
             node.hasData = true;
             size++;
             return node;
@@ -117,27 +181,29 @@ public class IterationQuadTree {
 
             double oldR = node.pointReal, oldI = node.pointImag;
             int oldIter = node.iterationCount;
+            double oldFZr = node.finalZr, oldFZi = node.finalZi;
             node.hasData = false;
 
             // Re-insert the existing point
-            insertIntoChild(node, oldR, oldI, oldIter, depth);
+            insertIntoChild(node, oldR, oldI, oldIter, oldFZr, oldFZi, depth);
             // Insert the new point
-            insertIntoChild(node, real, imag, iterationCount, depth);
+            insertIntoChild(node, real, imag, iterationCount, finalZr, finalZi, depth);
             return node;
         }
 
         // Internal node — descend into the correct child
-        insertIntoChild(node, real, imag, iterationCount, depth);
+        insertIntoChild(node, real, imag, iterationCount, finalZr, finalZi, depth);
         return node;
     }
 
-    private void insertIntoChild(Node node, double real, double imag, int iterationCount, int depth) {
+    private void insertIntoChild(Node node, double real, double imag, int iterationCount,
+                                  double finalZr, double finalZi, int depth) {
         int q = node.quadrantFor(real, imag);
         Node child = node.child(q);
         if (child == null) {
             child = node.createChild(q);
         }
-        insert(child, real, imag, iterationCount, depth + 1);
+        insert(child, real, imag, iterationCount, finalZr, finalZi, depth + 1);
     }
 
     /**
@@ -183,6 +249,7 @@ public class IterationQuadTree {
         // Leaf data
         double pointReal, pointImag;
         int iterationCount;
+        double finalZr, finalZi;
         boolean hasData;
 
         // Children
