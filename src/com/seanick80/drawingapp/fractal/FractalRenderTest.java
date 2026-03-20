@@ -56,6 +56,9 @@ public class FractalRenderTest {
         testLoadMandelbrotNotOverriddenByJuliaConstant();
         testSevenPointedStarDeepZoom();
 
+        // Partial render bug reproduction
+        testPartialRenderBug();
+
         // Phase C: New fractal type tests (T2.6-T2.8, T3.1-T3.5)
         testBurningShipIteration();
         testTricornIteration();
@@ -910,6 +913,166 @@ public class FractalRenderTest {
         check("seven-pointed star renders with detail (colors=" + colors + ")", colors >= 3);
         check("seven-pointed star is Mandelbrot type",
               r.getType() instanceof MandelbrotType);
+    }
+
+    /**
+     * Reproduces the partial render bug at a specific deep-zoom Mandelbrot location.
+     *
+     * Location: approx -0.6596578... -0.4505474... at zoom ~1e-39
+     * maxIterations: 706
+     *
+     * Expected: ~25% black (Mandelbrot interior), detail across the rest.
+     * Bug symptom: ~75% or more black — large swaths of the image incorrectly
+     * treated as interior when they should show iteration-escape colour.
+     *
+     * Renders in three configurations and prints row-level diagnostics:
+     *   1. BIGDECIMAL mode (pure BigDecimal, no perturbation, no interior pruning) — ground truth
+     *   2. BIGDECIMAL mode with interior pruning enabled
+     *   3. PERTURBATION mode (perturbation + interior pruning ON by default)
+     */
+    private static void testPartialRenderBug() {
+        System.out.println();
+        System.out.println("  -- Partial Render Bug Diagnostics --");
+
+        final int W = 100, H = 75;
+        final int TOTAL = W * H;
+        final int BLACK = Color.BLACK.getRGB();
+
+        BigDecimal minR = new BigDecimal("-0.659657804128263403164649202540923498620");
+        BigDecimal maxR = new BigDecimal("-0.659657804128263397293292745606340428924");
+        BigDecimal minI = new BigDecimal("-0.450547498432446486714476507308609934980");
+        BigDecimal maxI = new BigDecimal("-0.450547498432446480843120050374026865284");
+        int maxIter = 706;
+
+        // ----------------------------------------------------------------
+        // Config 1: Pure BigDecimal, no interior pruning — ground truth
+        // ----------------------------------------------------------------
+        FractalRenderer rBD = new FractalRenderer();
+        rBD.setType(FractalType.MANDELBROT);
+        rBD.setBounds(minR, maxR, minI, maxI);
+        rBD.setMaxIterations(maxIter);
+        rBD.setRenderMode(FractalRenderer.RenderMode.BIGDECIMAL);
+        rBD.setInteriorPruning(false);
+
+        BufferedImage imgBD = rBD.render(W, H, gradient());
+        int[] pxBD = getPixels(imgBD);
+
+        int blackBD = 0;
+        int firstBlackRowBD = -1;
+        int allBlackRowsBD = 0;
+        for (int row = 0; row < H; row++) {
+            int rowBlack = 0;
+            for (int col = 0; col < W; col++) {
+                if (pxBD[row * W + col] == BLACK) rowBlack++;
+            }
+            if (rowBlack == W) {
+                allBlackRowsBD++;
+                if (firstBlackRowBD < 0) firstBlackRowBD = row;
+            }
+            blackBD += rowBlack;
+        }
+        double pctBD = 100.0 * blackBD / TOTAL;
+        System.out.printf("  BIGDECIMAL (no pruning): black=%d/%d (%.1f%%), "
+                + "all-black rows=%d, first all-black row=%d%n",
+                blackBD, TOTAL, pctBD, allBlackRowsBD, firstBlackRowBD);
+        check("BIGDECIMAL (no pruning): <50% black (got " + String.format("%.1f%%", pctBD) + ")",
+              pctBD < 50.0);
+
+        // ----------------------------------------------------------------
+        // Config 2: Pure BigDecimal WITH interior pruning
+        // ----------------------------------------------------------------
+        FractalRenderer rBDPrune = new FractalRenderer();
+        rBDPrune.setType(FractalType.MANDELBROT);
+        rBDPrune.setBounds(minR, maxR, minI, maxI);
+        rBDPrune.setMaxIterations(maxIter);
+        rBDPrune.setRenderMode(FractalRenderer.RenderMode.BIGDECIMAL);
+        rBDPrune.setInteriorPruning(true);
+
+        BufferedImage imgBDPrune = rBDPrune.render(W, H, gradient());
+        int[] pxBDPrune = getPixels(imgBDPrune);
+
+        int blackBDPrune = 0;
+        int firstBlackRowBDPrune = -1;
+        int allBlackRowsBDPrune = 0;
+        for (int row = 0; row < H; row++) {
+            int rowBlack = 0;
+            for (int col = 0; col < W; col++) {
+                if (pxBDPrune[row * W + col] == BLACK) rowBlack++;
+            }
+            if (rowBlack == W) {
+                allBlackRowsBDPrune++;
+                if (firstBlackRowBDPrune < 0) firstBlackRowBDPrune = row;
+            }
+            blackBDPrune += rowBlack;
+        }
+        double pctBDPrune = 100.0 * blackBDPrune / TOTAL;
+        System.out.printf("  BIGDECIMAL (with pruning): black=%d/%d (%.1f%%), "
+                + "all-black rows=%d, first all-black row=%d%n",
+                blackBDPrune, TOTAL, pctBDPrune, allBlackRowsBDPrune, firstBlackRowBDPrune);
+
+        // Compare pruned vs non-pruned: should be identical
+        int pruningDiff = 0;
+        for (int i = 0; i < TOTAL; i++) {
+            if (pxBD[i] != pxBDPrune[i]) pruningDiff++;
+        }
+        System.out.printf("  BIGDECIMAL pruning diff vs no-pruning: %d pixels%n", pruningDiff);
+        check("BIGDECIMAL pruning matches no-pruning (diff=" + pruningDiff + ")", pruningDiff == 0);
+
+        // ----------------------------------------------------------------
+        // Config 3: PERTURBATION mode (with interior pruning, default)
+        // ----------------------------------------------------------------
+        FractalRenderer rPT = new FractalRenderer();
+        rPT.setType(FractalType.MANDELBROT);
+        rPT.setBounds(minR, maxR, minI, maxI);
+        rPT.setMaxIterations(maxIter);
+        rPT.setRenderMode(FractalRenderer.RenderMode.PERTURBATION);
+        rPT.setInteriorPruning(true);
+
+        BufferedImage imgPT = rPT.render(W, H, gradient());
+        int[] pxPT = getPixels(imgPT);
+
+        int blackPT = 0;
+        int firstBlackRowPT = -1;
+        int allBlackRowsPT = 0;
+        for (int row = 0; row < H; row++) {
+            int rowBlack = 0;
+            for (int col = 0; col < W; col++) {
+                if (pxPT[row * W + col] == BLACK) rowBlack++;
+            }
+            if (rowBlack == W) {
+                allBlackRowsPT++;
+                if (firstBlackRowPT < 0) firstBlackRowPT = row;
+            }
+            blackPT += rowBlack;
+        }
+        double pctPT = 100.0 * blackPT / TOTAL;
+        System.out.printf("  PERTURBATION (with pruning): black=%d/%d (%.1f%%), "
+                + "all-black rows=%d, first all-black row=%d%n",
+                blackPT, TOTAL, pctPT, allBlackRowsPT, firstBlackRowPT);
+        check("PERTURBATION: <50% black (got " + String.format("%.1f%%", pctPT) + ")",
+              pctPT < 50.0);
+
+        // Compare perturbation vs BD ground truth (structural)
+        int ptVsBDDiff = 0;
+        for (int i = 0; i < TOTAL; i++) {
+            if (pxBD[i] != pxPT[i]) ptVsBDDiff++;
+        }
+        System.out.printf("  PERTURBATION diff vs BIGDECIMAL ground truth: %d pixels (%.1f%%)%n",
+                ptVsBDDiff, 100.0 * ptVsBDDiff / TOTAL);
+        // Perturbation may differ at edges but should broadly agree on black regions
+        int falseBlackPT = 0; // pixels BD says non-black but PT says black
+        int falseBlackBDPrune = 0; // pixels BD says non-black but BD+pruning says black
+        for (int i = 0; i < TOTAL; i++) {
+            boolean bdBlack = pxBD[i] == BLACK;
+            if (!bdBlack && pxPT[i] == BLACK) falseBlackPT++;
+            if (!bdBlack && pxBDPrune[i] == BLACK) falseBlackBDPrune++;
+        }
+        System.out.printf("  False-black pixels (vs ground truth): PT=%d, BD+pruning=%d%n",
+                falseBlackPT, falseBlackBDPrune);
+        check("PERTURBATION false-black count < 10% of image (got " + falseBlackPT + ")",
+              falseBlackPT < TOTAL * 0.10);
+        check("BIGDECIMAL+pruning false-black count < 10% of image (got " + falseBlackBDPrune + ")",
+              falseBlackBDPrune < TOTAL * 0.10);
     }
 
     // --- Helpers ---

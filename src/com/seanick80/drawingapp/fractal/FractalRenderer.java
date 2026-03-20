@@ -352,6 +352,14 @@ public class FractalRenderer {
         }
 
         double cacheTolerance = Math.min(dScaleX, dScaleY) * 0.1;
+        // At extreme deep zoom, double precision can't distinguish adjacent pixels.
+        // Cache keys become useless — all pixels map to the same double coordinate.
+        boolean cacheUsable = width > 1 && height > 1
+            && pixelCx[0].doubleValue() != pixelCx[1].doubleValue()
+            && pixelCy[0].doubleValue() != pixelCy[1].doubleValue();
+        if (!cacheUsable) {
+            cache.clear(); // Discard stale entries that would produce false hits
+        }
         cache.resetStats();
 
         // 3. Hierarchical interior pruning: recursively subdivide the image into blocks.
@@ -409,17 +417,19 @@ public class FractalRenderer {
                     int idx = r * width + col;
 
                     // Check cache first (coordinates in complex plane)
-                    double cx = pixelCx[col].doubleValue();
-                    double cy = pixelCy[r].doubleValue();
-                    int iter = cache.lookup(cx, cy, cacheTolerance);
-                    if (iter != IterationQuadTree.CACHE_MISS) {
-                        cacheHit[idx] = true;
-                        iters[idx] = iter;
-                        rgb[idx] = mapper.colorForIter(iter);
-                        continue;
+                    if (cacheUsable) {
+                        double cx = pixelCx[col].doubleValue();
+                        double cy = pixelCy[r].doubleValue();
+                        int cached = cache.lookup(cx, cy, cacheTolerance);
+                        if (cached != IterationQuadTree.CACHE_MISS) {
+                            cacheHit[idx] = true;
+                            iters[idx] = cached;
+                            rgb[idx] = mapper.colorForIter(cached);
+                            continue;
+                        }
                     }
 
-                    iter = strategy.perturbIterate(refZr, refZi, dcr, dci, refEscapeIter, maxIterations);
+                    int iter = strategy.perturbIterate(refZr, refZi, dcr, dci, refEscapeIter, maxIterations);
 
                     if (iter == PerturbationStrategy.GLITCH_DETECTED) {
                         // Fallback to full BigDecimal for this pixel
@@ -449,7 +459,7 @@ public class FractalRenderer {
         }
 
         // Insert newly computed pixels into cache (sequential — cache is not thread-safe for writes)
-        if (!renderCancelled) {
+        if (!renderCancelled && cacheUsable) {
             for (int i = 0; i < width * height; i++) {
                 if (!interiorPixel[i] && !cacheHit[i]) {
                     double cx = pixelCx[i % width].doubleValue();
@@ -611,6 +621,12 @@ public class FractalRenderer {
         double dScaleX = vp.scaleX.doubleValue();
         double dScaleY = vp.scaleY.doubleValue();
         double cacheTolerance = Math.min(dScaleX, dScaleY) * 0.1;
+        boolean cacheUsable = width > 1 && height > 1
+            && pxCx[0].doubleValue() != pxCx[1].doubleValue()
+            && pxCy[0].doubleValue() != pxCy[1].doubleValue();
+        if (!cacheUsable) {
+            cache.clear();
+        }
         cache.resetStats();
 
         int nThreads = Runtime.getRuntime().availableProcessors();
@@ -625,17 +641,19 @@ public class FractalRenderer {
                     int idx = r * width + col;
 
                     // Check cache first
-                    double cx = pxCx[col].doubleValue();
-                    double cy = pxCy[r].doubleValue();
-                    int iter = cache.lookup(cx, cy, cacheTolerance);
-                    if (iter != IterationQuadTree.CACHE_MISS) {
-                        cacheHit[idx] = true;
-                        iters[idx] = iter;
-                        rgb[idx] = mapper.colorForIter(iter);
-                        continue;
+                    if (cacheUsable) {
+                        double cx = pxCx[col].doubleValue();
+                        double cy = pxCy[r].doubleValue();
+                        int cached = cache.lookup(cx, cy, cacheTolerance);
+                        if (cached != IterationQuadTree.CACHE_MISS) {
+                            cacheHit[idx] = true;
+                            iters[idx] = cached;
+                            rgb[idx] = mapper.colorForIter(cached);
+                            continue;
+                        }
                     }
 
-                    iter = type.iterateBig(pxCx[col], pxCy[r], maxIterations, mc);
+                    int iter = type.iterateBig(pxCx[col], pxCy[r], maxIterations, mc);
                     iters[idx] = iter;
                     rgb[idx] = mapper.colorForIter(iter);
                 }
@@ -659,7 +677,7 @@ public class FractalRenderer {
         }
 
         // Insert newly computed pixels into cache (sequential — cache is not thread-safe for writes)
-        if (!renderCancelled) {
+        if (!renderCancelled && cacheUsable) {
             for (int i = 0; i < width * height; i++) {
                 if (!cacheHit[i]) {
                     double cx = pxCx[i % width].doubleValue();
