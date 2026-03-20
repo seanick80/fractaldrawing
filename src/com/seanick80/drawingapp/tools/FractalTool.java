@@ -42,6 +42,11 @@ public class FractalTool implements Tool {
     private BufferedImage lastImage;
     private DrawingCanvas lastCanvas;
 
+    // Pan state
+    private int dragStartX, dragStartY;
+    private boolean dragging;
+    private static final int DRAG_THRESHOLD = 5; // pixels before drag starts
+
     public FractalTool() {
         gradient = ColorGradient.fractalDefault();
     }
@@ -228,40 +233,9 @@ public class FractalTool implements Tool {
     public void mousePressed(BufferedImage image, int x, int y, DrawingCanvas canvas) {
         lastImage = image;
         lastCanvas = canvas;
-
-        int w = image.getWidth();
-        int h = image.getHeight();
-        int button = canvas.getLastMouseButton();
-
-        // Zoom: compute new bounds centered on click position using BigDecimal
-        if (button == java.awt.event.MouseEvent.BUTTON1 || button == java.awt.event.MouseEvent.BUTTON3) {
-            BigDecimal minR = renderer.getMinRealBig(), maxR = renderer.getMaxRealBig();
-            BigDecimal minI = renderer.getMinImagBig(), maxI = renderer.getMaxImagBig();
-            MathContext mc = getZoomMathContext(minR, maxR, minI, maxI);
-            BigDecimal rangeR = maxR.subtract(minR, mc);
-            BigDecimal rangeI = maxI.subtract(minI, mc);
-
-            // Map click pixel to complex coordinate
-            BigDecimal xFrac = new BigDecimal(x).divide(new BigDecimal(w), mc);
-            BigDecimal yFrac = new BigDecimal(y).divide(new BigDecimal(h), mc);
-            BigDecimal clickReal = minR.add(xFrac.multiply(rangeR, mc), mc);
-            BigDecimal clickImag = minI.add(yFrac.multiply(rangeI, mc), mc);
-
-            BigDecimal zoomFactor = (button == java.awt.event.MouseEvent.BUTTON1)
-                ? new BigDecimal("0.5") : new BigDecimal("2.0");
-            BigDecimal newRangeR = rangeR.multiply(zoomFactor, mc);
-            BigDecimal newRangeI = rangeI.multiply(zoomFactor, mc);
-            BigDecimal two = new BigDecimal(2);
-
-            renderer.setBounds(
-                clickReal.subtract(newRangeR.divide(two, mc), mc),
-                clickReal.add(newRangeR.divide(two, mc), mc),
-                clickImag.subtract(newRangeI.divide(two, mc), mc),
-                clickImag.add(newRangeI.divide(two, mc), mc)
-            );
-        }
-
-        renderAsync(image, canvas);
+        dragStartX = x;
+        dragStartY = y;
+        dragging = false;
     }
 
     @Override
@@ -331,6 +305,7 @@ public class FractalTool implements Tool {
                 try {
                     BufferedImage fractalImage = get();
                     if (fractalImage != null) {
+                        canvas.setPanOffset(0, 0); // Clear pan offset before painting new image
                         Graphics2D g = image.createGraphics();
                         g.drawImage(fractalImage, 0, 0, null);
                         g.dispose();
@@ -566,10 +541,92 @@ public class FractalTool implements Tool {
     }
 
     @Override
-    public void mouseDragged(BufferedImage image, int x, int y, DrawingCanvas canvas) {}
+    public void mouseDragged(BufferedImage image, int x, int y, DrawingCanvas canvas) {
+        int dx = x - dragStartX;
+        int dy = y - dragStartY;
+        if (!dragging && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+            dragging = true;
+            // Cancel any in-progress render when pan starts
+            if (currentWorker != null && !currentWorker.isDone()) {
+                renderer.cancelRender();
+                currentWorker.cancel(true);
+            }
+        }
+        if (!dragging) return;
+
+        // Shift the raster image visually — no re-render until mouse up
+        canvas.setPanOffset(dx, dy);
+    }
 
     @Override
-    public void mouseReleased(BufferedImage image, int x, int y, DrawingCanvas canvas) {}
+    public void mouseReleased(BufferedImage image, int x, int y, DrawingCanvas canvas) {
+        if (dragging) {
+            dragging = false;
+            // Don't clear pan offset here — keep image pinned until re-render completes
+
+            // Apply the final pan delta to the viewport
+            int dx = x - dragStartX;
+            int dy = y - dragStartY;
+            int w = image.getWidth();
+            int h = image.getHeight();
+
+            BigDecimal minR = renderer.getMinRealBig(), maxR = renderer.getMaxRealBig();
+            BigDecimal minI = renderer.getMinImagBig(), maxI = renderer.getMaxImagBig();
+            MathContext mc = getZoomMathContext(minR, maxR, minI, maxI);
+            BigDecimal rangeR = maxR.subtract(minR, mc);
+            BigDecimal rangeI = maxI.subtract(minI, mc);
+
+            BigDecimal deltaR = rangeR.multiply(BigDecimal.valueOf(dx), mc)
+                                      .divide(BigDecimal.valueOf(w), mc).negate();
+            BigDecimal deltaI = rangeI.multiply(BigDecimal.valueOf(dy), mc)
+                                      .divide(BigDecimal.valueOf(h), mc).negate();
+
+            renderer.setBounds(
+                minR.add(deltaR, mc), maxR.add(deltaR, mc),
+                minI.add(deltaI, mc), maxI.add(deltaI, mc)
+            );
+
+            lastImage = image;
+            lastCanvas = canvas;
+            renderAsync(image, canvas);
+            return;
+        }
+
+        // No drag occurred — treat as zoom click
+        lastImage = image;
+        lastCanvas = canvas;
+        int w = image.getWidth();
+        int h = image.getHeight();
+        int button = canvas.getLastMouseButton();
+
+        if (button == java.awt.event.MouseEvent.BUTTON1 || button == java.awt.event.MouseEvent.BUTTON3) {
+            BigDecimal minR = renderer.getMinRealBig(), maxR = renderer.getMaxRealBig();
+            BigDecimal minI = renderer.getMinImagBig(), maxI = renderer.getMaxImagBig();
+            MathContext mc = getZoomMathContext(minR, maxR, minI, maxI);
+            BigDecimal rangeR = maxR.subtract(minR, mc);
+            BigDecimal rangeI = maxI.subtract(minI, mc);
+
+            BigDecimal xFrac = new BigDecimal(x).divide(new BigDecimal(w), mc);
+            BigDecimal yFrac = new BigDecimal(y).divide(new BigDecimal(h), mc);
+            BigDecimal clickReal = minR.add(xFrac.multiply(rangeR, mc), mc);
+            BigDecimal clickImag = minI.add(yFrac.multiply(rangeI, mc), mc);
+
+            BigDecimal zoomFactor = (button == java.awt.event.MouseEvent.BUTTON1)
+                ? new BigDecimal("0.5") : new BigDecimal("2.0");
+            BigDecimal newRangeR = rangeR.multiply(zoomFactor, mc);
+            BigDecimal newRangeI = rangeI.multiply(zoomFactor, mc);
+            BigDecimal two = new BigDecimal(2);
+
+            renderer.setBounds(
+                clickReal.subtract(newRangeR.divide(two, mc), mc),
+                clickReal.add(newRangeR.divide(two, mc), mc),
+                clickImag.subtract(newRangeI.divide(two, mc), mc),
+                clickImag.add(newRangeI.divide(two, mc), mc)
+            );
+        }
+
+        renderAsync(image, canvas);
+    }
 
     @Override
     public void drawPreview(Graphics2D g) {}

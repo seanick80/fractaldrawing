@@ -13,15 +13,15 @@ Cache is no longer cleared on zoom/pan (`setBounds()` now prunes instead of clea
 ## ~~Load/Save type bug~~ FIXED (2026-03-20)
 Loading a Mandelbrot JSON that contained juliaReal/juliaImag fields would switch the renderer to Julia mode because `setJuliaConstant()` unconditionally overwrites the type. Fixed to only apply Julia constant when loaded type is JuliaType.
 
-## Precalculating individual pixel lat, long values.
- One big chunk of time spent per iteration is to map a pixel to it’s real and imaginary coordinates.If you calculate the real axis and the imaginary axis of the current viewport once, then pass those values in to each cell worker, you’re saving 2-4 orders of magnitude of calculation on just that one value.
+## ~~Precalculating individual pixel lat, long values~~ DONE (2026-03-20)
+Pre-computed `pixelCx[]` and `pixelCy[]` BigDecimal arrays once per render, passed to all worker threads. Eliminates per-pixel `BigDecimal.add(scaleX.multiply(...))` in boundary checks, pruning, and glitch fallback. Implemented as part of the memory hygiene refactor.
 
 ## ~~Add Percent complete status back~~ DONE (2026-03-18)
 Implemented via SwingTimer polling every 200ms. Shows percentage, row count, elapsed time, and ETA.
 
 
-## Pan (click and drag)
-Click and drag to pan the viewport. Should leverage the quadtree cache — cached pixels from the previous viewport that overlap the new viewport get reused, only newly visible edges need to be computed.
+## ~~Pan (click and drag)~~ DONE (2026-03-21)
+Left-click drag pans the viewport. The raster image shifts with the cursor for instant visual feedback (black fill behind exposed edges), then re-renders on mouse release. Click without drag still zooms (left=in, right=out). Leverages the quadtree cache for pixel reuse across pans.
 
 ## Features I’d like to explore when we have more time:
 ### Animations

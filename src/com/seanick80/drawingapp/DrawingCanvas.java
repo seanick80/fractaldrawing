@@ -16,6 +16,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     private final UndoManager undoManager;
     private boolean drawing;
     private int lastMouseButton;
+    private int panOffsetX, panOffsetY;
 
     public DrawingCanvas(int width, int height, UndoManager undoManager) {
         this.undoManager = undoManager;
@@ -82,10 +83,22 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         undoManager.saveState(image);
     }
 
+    public void setPanOffset(int dx, int dy) {
+        panOffsetX = dx;
+        panOffsetY = dy;
+    }
+
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        g.drawImage(image, 0, 0, null);
+        if (panOffsetX != 0 || panOffsetY != 0) {
+            // During pan: fill background black, draw image shifted
+            g.setColor(Color.BLACK);
+            g.fillRect(0, 0, getWidth(), getHeight());
+            g.drawImage(image, panOffsetX, panOffsetY, null);
+        } else {
+            g.drawImage(image, 0, 0, null);
+        }
         if (activeTool != null && drawing) {
             activeTool.drawPreview((Graphics2D) g);
         }

@@ -20,7 +20,8 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 - **Auto-switching**: Renders in double precision at shallow zoom (fast), automatically switches to perturbation + BigDecimal past ~10^13 zoom
 - **Render modes**: AUTO (default), DOUBLE, BIGDECIMAL, PERTURBATION — selectable for benchmarking
 - **Color modes**: Mod (cyclic) for consistent color detail at all zoom levels, or Division (linear) for smooth gradients
-- **Quadtree cache**: Caches iteration counts in complex-plane coordinates, reused across renders in double mode
+- **Click and drag panning**: Drag to pan the viewport — the raster image shifts with the cursor for instant visual feedback, then re-renders on release
+- **Quadtree cache**: Caches iteration counts in complex-plane coordinates, preserved across zoom and pan operations. Automatically disabled at extreme deep zoom where double-precision keys can't distinguish pixels.
 - **Custom color gradients**: Full gradient editor with save/load support
 - **Save/Load locations**: Export and import fractal coordinates as JSON for bookmarking and sharing
 - **Preset locations**: Built-in menu with interesting locations from Seahorse Valley to 10^18 zoom
@@ -43,7 +44,7 @@ build.cmd run
 ## Testing
 
 ```bash
-# Run regression tests (89 assertions covering all render modes and fractal types)
+# Run regression tests (104 assertions covering all render modes and fractal types)
 ./test.sh       # Unix/Git Bash
 test.cmd        # Windows
 
@@ -62,6 +63,9 @@ Tests cover:
 - ViewportCalculator aspect-ratio correction, ColorMapper LUT construction
 - QuadTree cache contract, JSON parsing, gradient consistency
 - Cache stability across zoom cycles, render mode switching
+- Interior pruning correctness: pixel-identical output with pruning on/off at spiky edges
+- Load/save correctness: Mandelbrot type preserved when JSON contains Julia fields
+- Deep zoom cache safety: no false hits from stale double-precision cache entries
 
 ## Benchmarking
 
@@ -83,6 +87,9 @@ Benchmark locations included:
 - `perturbation_error.json` — zoom 4.50e15, 41% interior pixels (perturbation stress test)
 - `double_seahorse.json` — Seahorse valley, moderate zoom
 - `double_mini_mandelbrot.json` — Mini Mandelbrot at -1.767
+- `mandelbrot_cardioid.json` — Shallow cardioid view, interior-heavy
+- `mandelbrot_bulb_edge.json` — Period-2 bulb edge, 512 iterations
+- `mandelbrot_deep_interior.json` — Cardioid center at zoom 2e14
 
 ## Architecture
 
@@ -111,10 +118,10 @@ src/com/seanick80/drawingapp/
 │   ├── FractalJsonUtil.java    # Shared JSON parsing
 │   ├── FractalBenchmark.java   # CLI performance benchmark
 │   ├── PerturbationEval.java   # CLI perturbation correctness evaluation
-│   └── FractalRenderTest.java  # 89-assertion regression test suite
+│   └── FractalRenderTest.java  # 104-assertion regression test suite
 └── tools/
     ├── Tool.java            # Tool interface
-    ├── FractalTool.java     # Fractal UI: zoom, save/load, async render
+    ├── FractalTool.java     # Fractal UI: zoom, pan, save/load, async render
     └── ...                  # Pencil, Line, Rectangle, Oval, Eraser, Fill
 ```
 
@@ -159,23 +166,16 @@ public final class MyFractalType implements FractalType {
 
 ### Performance
 
-- **Memory hygiene** — Pre-allocate buffers on fractal tool initialization instead of reallocating per render. Remove allocations from the perturbation and BigDecimal hot paths where optimization matters most.
-
-- **Interior pruning improvements** — Current Mariani-Silver boundary sampling is pixel-perfect but expensive. Explore hierarchical quadtree subdivision: if a block's boundary is all interior, skip it; otherwise subdivide and repeat.
-
-- **Pre-calculate pixel coordinates** — Compute the real and imaginary axis values for the current viewport once (two 1D arrays), then pass them into each pixel worker.
-
-- **Perturbation for new types** — Burning Ship, Tricorn, and Magnet currently fall back to pure BigDecimal for deep zoom. Adding perturbation strategies for these would significantly improve deep zoom performance.
-
-- **Custom FixedPrecisionFloat** — Investigate a mutable fixed-width binary float using `long[]` limbs with zero allocation in the inner loop, as a faster alternative to BigDecimal for deep zoom.
+- ~~**Memory hygiene**~~ DONE — Pre-allocated render buffers, promoted BigDecimal constants to static finals, cached perturbation strategies, pre-computed pixel coordinate arrays
+- ~~**Interior pruning**~~ DONE — Hierarchical quadtree subdivision with 4-corner quick rejection
+- ~~**Pre-calculate pixel coordinates**~~ DONE — One-time computation of real/imaginary axis arrays per render
+- ~~**Cross-render cache reuse**~~ DONE — Cache preserved across zoom/pan, wired into BigDecimal paths, auto-disabled at extreme deep zoom
+- **Perturbation for new types** — Burning Ship, Tricorn, and Magnet currently fall back to pure BigDecimal for deep zoom
+- **Custom FixedPrecisionFloat** — Mutable fixed-width binary float using `long[]` limbs as a faster alternative to BigDecimal
 
 ### Features
 
-- **More fractal types** — Mandelbulb/Mandelbox (3D), Sierpinski triangle/carpet, Koch snowflake (IFS fractals — would require a separate rendering paradigm)
-
-- **Animations**
-  - *Iteration animation* — Render incrementally (add one iteration per frame), save as video
-  - *Zoom animation* — Smooth animated zoom into a target location
-  - *Palette cycle animation* — Rotate colors through the gradient over time
-
-- **Random location explorer** — Heuristic-based discovery of interesting fractal locations. Pick random coordinates, sample a few points, and filter for locations with varied palette entries.
+- ~~**Click and drag panning**~~ DONE — Raster image shifts with cursor, re-renders on release
+- **More fractal types** — Mandelbulb/Mandelbox (3D), Sierpinski triangle/carpet, Koch snowflake (IFS fractals)
+- **Animations** — Iteration animation, zoom animation, palette cycle animation
+- **Random location explorer** — Heuristic-based discovery of interesting fractal locations
