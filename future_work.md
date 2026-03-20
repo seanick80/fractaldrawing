@@ -23,6 +23,15 @@ Implemented via SwingTimer polling every 200ms. Shows percentage, row count, ela
 ## ~~Pan (click and drag)~~ DONE (2026-03-21)
 Left-click drag pans the viewport. The raster image shifts with the cursor for instant visual feedback (black fill behind exposed edges), then re-renders on mouse release. Click without drag still zooms (left=in, right=out). Leverages the quadtree cache for pixel reuse across pans.
 
+## ~~Gradient editor: color picker for control points~~ DONE (2026-03-21)
+Double-click a stop marker in the gradient preview bar to open JColorChooser. Selected color auto-updates the R, G, B control point values for that stop. Click in the preview bar to select stops, Shift+click to add, right-click to delete.
+
+## ~~Auto-generate gradient from palette click~~ DONE (2026-03-21)
+When the fractal tool is active, clicking a color in the palette generates a 6-stop triadic gradient favoring that color (dark base → full color → pastel → triadic +120° → triadic +240° → near-black). Gradient applies immediately and triggers a re-render.
+
+## ~~Random location explorer ("I Feel Lucky")~~ DONE (2026-03-21)
+Button in fractal tool settings panel. Samples random Mandelbrot locations (zoom 10^-2 to 10^-8), tests 8 points for varied iteration counts (≥4 distinct, mix of interior and escape), and navigates to the first interesting location found.
+
 ## Features I’d like to explore when we have more time:
 ### Animations
 *   Iteration animation - add one iteration, display it, add another, etc - up to the point where not many iterations are present anymore. Save the resulting iteration slides as a video which can be played back.

@@ -1,5 +1,6 @@
 package com.seanick80.drawingapp.tools;
 
+import com.seanick80.drawingapp.ColorPicker;
 import com.seanick80.drawingapp.DrawingCanvas;
 import com.seanick80.drawingapp.fractal.FractalRenderer;
 import com.seanick80.drawingapp.fractal.FractalType;
@@ -12,6 +13,7 @@ import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.image.BufferedImage;
+import java.beans.PropertyChangeListener;
 import java.io.*;
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -20,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class FractalTool implements Tool {
 
@@ -41,6 +44,10 @@ public class FractalTool implements Tool {
     private File lastDirectory;
     private BufferedImage lastImage;
     private DrawingCanvas lastCanvas;
+
+    private JPanel gradientPreview;
+    private PropertyChangeListener colorListener;
+    private ColorPicker registeredColorPicker;
 
     // Pan state
     private int dragStartX, dragStartY;
@@ -109,7 +116,7 @@ public class FractalTool implements Tool {
         gradLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(gradLabel);
 
-        JPanel gradientPreview = new JPanel() {
+        gradientPreview = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
@@ -176,6 +183,14 @@ public class FractalTool implements Tool {
             }
         });
         panel.add(renderBtn);
+        panel.add(Box.createVerticalStrut(4));
+
+        JButton luckyBtn = new JButton("I Feel Lucky");
+        luckyBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        luckyBtn.setMaximumSize(new Dimension(120, 28));
+        luckyBtn.setFont(luckyBtn.getFont().deriveFont(10f));
+        luckyBtn.addActionListener(e -> feelLucky());
+        panel.add(luckyBtn);
         panel.add(Box.createVerticalStrut(12));
 
         // Zoom / position info
@@ -226,7 +241,32 @@ public class FractalTool implements Tool {
     public void onActivated(BufferedImage image, DrawingCanvas canvas) {
         lastImage = image;
         lastCanvas = canvas;
+        registerColorListener(canvas);
         renderAsync(image, canvas);
+    }
+
+    private void registerColorListener(DrawingCanvas canvas) {
+        // Remove previous listener if any
+        if (registeredColorPicker != null && colorListener != null) {
+            registeredColorPicker.removeColorPropertyChangeListener(colorListener);
+        }
+
+        ColorPicker picker = canvas.getColorPicker();
+        if (picker == null) return;
+
+        colorListener = evt -> {
+            if (!ColorPicker.PROP_FOREGROUND_COLOR.equals(evt.getPropertyName())) return;
+            Color newColor = (Color) evt.getNewValue();
+            gradient = ColorGradient.fromBaseColor(newColor);
+            if (gradientPreview != null) {
+                gradientPreview.repaint();
+            }
+            if (lastImage != null && lastCanvas != null) {
+                renderAsync(lastImage, lastCanvas);
+            }
+        };
+        picker.addColorPropertyChangeListener(colorListener);
+        registeredColorPicker = picker;
     }
 
     @Override
@@ -430,6 +470,90 @@ public class FractalTool implements Tool {
         double zoom = (minRange > 0) ? 4.0 / minRange : 1;
         int precision = 20 + (int) Math.ceil(Math.log10(Math.max(zoom, 1)));
         return new MathContext(precision, RoundingMode.HALF_UP);
+    }
+
+    // --- I Feel Lucky ---
+
+    private void feelLucky() {
+        new SwingWorker<double[], Void>() {
+            @Override
+            protected double[] doInBackground() {
+                return findInterestingLocation();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    double[] loc = get();
+                    if (loc == null) return;
+                    double centerR = loc[0], centerI = loc[1], halfSpan = loc[2];
+
+                    // Update UI first (triggers listeners that reset bounds)
+                    if (typeCombo != null) typeCombo.setSelectedItem("MANDELBROT");
+                    if (iterSpinner != null) iterSpinner.setValue(256);
+
+                    // Set bounds AFTER combo/spinner listeners have fired
+                    renderer.setBounds(
+                        centerR - halfSpan, centerR + halfSpan,
+                        centerI - halfSpan, centerI + halfSpan
+                    );
+                    updateInfoLabels();
+
+                    if (lastImage != null && lastCanvas != null) {
+                        renderAsync(lastImage, lastCanvas);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }.execute();
+    }
+
+    /**
+     * Searches for a random interesting Mandelbrot location by sampling points
+     * and checking for varied iteration counts (a sign of boundary detail).
+     * Returns {centerReal, centerImag, halfSpan} or null if nothing found.
+     */
+    private double[] findInterestingLocation() {
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        FractalType mandelbrot = FractalType.MANDELBROT;
+        int maxIter = 256;
+
+        // Sample offsets: corners + edge midpoints of a unit square [-1,1]
+        double[][] offsets = {
+            {-1, -1}, {1, -1}, {-1, 1}, {1, 1},  // corners
+            {0, -1}, {0, 1}, {-1, 0}, {1, 0}       // midpoints
+        };
+
+        for (int attempt = 0; attempt < 1000; attempt++) {
+            double centerR = rng.nextDouble(-2.0, 0.5);
+            double centerI = rng.nextDouble(-1.2, 1.2);
+            double exponent = rng.nextDouble(2.0, 8.0);
+            double halfSpan = Math.pow(10, -exponent) / 2.0;
+
+            int[] iters = new int[8];
+            int distinctCount = 0;
+            boolean hasInterior = false;
+            boolean hasEscape = false;
+            boolean allTrivial = true;
+
+            java.util.HashSet<Integer> seen = new java.util.HashSet<>();
+            for (int s = 0; s < 8; s++) {
+                double px = centerR + offsets[s][0] * halfSpan;
+                double py = centerI + offsets[s][1] * halfSpan;
+                iters[s] = mandelbrot.iterate(px, py, maxIter);
+
+                seen.add(iters[s]);
+                if (iters[s] >= maxIter) hasInterior = true;
+                if (iters[s] < maxIter) hasEscape = true;
+                if (iters[s] >= 5) allTrivial = false;
+            }
+
+            distinctCount = seen.size();
+
+            if (distinctCount >= 4 && hasInterior && hasEscape && !allTrivial) {
+                return new double[] { centerR, centerI, halfSpan };
+            }
+        }
+        return null; // unlikely
     }
 
     // --- Save / Load location ---

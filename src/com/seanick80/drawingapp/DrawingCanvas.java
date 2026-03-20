@@ -71,6 +71,10 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         this.colorPicker = colorPicker;
     }
 
+    public ColorPicker getColorPicker() {
+        return colorPicker;
+    }
+
     public Color getForegroundColor() {
         return colorPicker != null ? colorPicker.getForegroundColor() : Color.BLACK;
     }

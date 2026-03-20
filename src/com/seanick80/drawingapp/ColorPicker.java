@@ -4,14 +4,19 @@ import javax.swing.*;
 import javax.swing.border.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.beans.PropertyChangeListener;
+import java.beans.PropertyChangeSupport;
 
 public class ColorPicker extends JPanel {
+
+    public static final String PROP_FOREGROUND_COLOR = "foregroundColor";
 
     private Color foregroundColor = Color.BLACK;
     private Color backgroundColor = Color.WHITE;
     private final JPanel fgSwatch;
     private final JPanel bgSwatch;
     private final DrawingCanvas canvas;
+    private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
 
     private static final Color[] PALETTE = {
         Color.BLACK, Color.WHITE, Color.DARK_GRAY, Color.GRAY,
@@ -94,8 +99,18 @@ public class ColorPicker extends JPanel {
     public Color getBackgroundColor() { return backgroundColor; }
 
     public void setForegroundColor(Color c) {
+        Color old = foregroundColor;
         foregroundColor = c;
         fgSwatch.setBackground(c);
+        pcs.firePropertyChange(PROP_FOREGROUND_COLOR, old, c);
+    }
+
+    public void addColorPropertyChangeListener(PropertyChangeListener listener) {
+        pcs.addPropertyChangeListener(listener);
+    }
+
+    public void removeColorPropertyChangeListener(PropertyChangeListener listener) {
+        pcs.removePropertyChangeListener(listener);
     }
 
     public void setBackgroundColor(Color c) {

@@ -125,6 +125,22 @@ public class GradientEditorPanel extends JPanel {
 
     // --- Hit testing ---
 
+    /** Find the nearest stop to a given x coordinate (ignoring y), within HIT_RADIUS. */
+    private ColorGradient.Stop hitStopByX(int x) {
+        List<ColorGradient.Stop> stops = gradient.getStops();
+        ColorGradient.Stop closest = null;
+        double bestDist = HIT_RADIUS;
+        for (ColorGradient.Stop s : stops) {
+            int sx = positionToX(s.getPosition());
+            double dist = Math.abs(x - sx);
+            if (dist < bestDist) {
+                bestDist = dist;
+                closest = s;
+            }
+        }
+        return closest;
+    }
+
     private int hitChannel(int y) {
         for (int ch = 0; ch < 3; ch++) {
             if (y >= getChannelTop(ch) && y <= getChannelBottom(ch)) return ch;
@@ -151,6 +167,31 @@ public class GradientEditorPanel extends JPanel {
     // --- Mouse handling ---
 
     private void handlePress(MouseEvent e) {
+        // Handle clicks in the preview bar area
+        if (e.getY() >= getPreviewTop() && e.getY() <= getPreviewBottom()) {
+            if (SwingUtilities.isRightMouseButton(e)) {
+                ColorGradient.Stop hit = hitStopByX(e.getX());
+                if (hit != null) {
+                    gradient.removeStop(hit);
+                    if (selectedStop == hit) selectedStop = null;
+                    repaint();
+                }
+                return;
+            }
+            ColorGradient.Stop hit = hitStopByX(e.getX());
+            if (hit != null) {
+                selectedStop = hit;
+            } else if (e.isShiftDown()) {
+                float pos = xToPosition(e.getX());
+                Color interpolated = gradient.getColorAt(pos);
+                selectedStop = gradient.addStop(pos, interpolated);
+            } else {
+                selectedStop = null;
+            }
+            repaint();
+            return;
+        }
+
         int ch = hitChannel(e.getY());
         if (ch < 0) return;
 

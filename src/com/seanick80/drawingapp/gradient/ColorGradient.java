@@ -35,6 +35,42 @@ public class ColorGradient {
         stops.add(new Stop(1f, Color.WHITE));
     }
 
+    /**
+     * Generate an interesting gradient based on a single color.
+     * Uses the base color prominently with two triadic complements.
+     */
+    public static ColorGradient fromBaseColor(Color base) {
+        float[] hsb = Color.RGBtoHSB(base.getRed(), base.getGreen(), base.getBlue(), null);
+        float hue = hsb[0];
+        float sat = hsb[1];
+        float bri = hsb[2];
+
+        ColorGradient g = new ColorGradient();
+        g.stops.clear();
+
+        // 0.0: darker version of the base (brightness reduced by 60%)
+        g.addStop(0.0f, Color.getHSBColor(hue, Math.min(1f, sat * 1.1f), bri * 0.4f));
+
+        // 0.16: the base color at full saturation
+        g.addStop(0.16f, Color.getHSBColor(hue, Math.min(1f, sat * 1.2f), Math.min(1f, bri * 1.1f)));
+
+        // 0.42: lighter/pastel version (higher brightness, lower saturation)
+        g.addStop(0.42f, Color.getHSBColor(hue, sat * 0.35f, Math.min(1f, bri * 0.5f + 0.5f)));
+
+        // 0.64: first triadic hue (base + 120 degrees)
+        float hue2 = (hue + 1f / 3f) % 1f;
+        g.addStop(0.64f, Color.getHSBColor(hue2, Math.min(1f, sat * 0.9f), Math.min(1f, bri * 0.9f + 0.1f)));
+
+        // 0.86: second triadic hue (base + 240 degrees)
+        float hue3 = (hue + 2f / 3f) % 1f;
+        g.addStop(0.86f, Color.getHSBColor(hue3, Math.min(1f, sat * 0.85f), Math.min(1f, bri * 0.8f + 0.1f)));
+
+        // 1.0: very dark version with slight hue tint
+        g.addStop(1.0f, Color.getHSBColor(hue, sat * 0.5f, 0.05f));
+
+        return g;
+    }
+
     /** Creates the standard fractal-coloring gradient used across the application. */
     public static ColorGradient fractalDefault() {
         ColorGradient g = new ColorGradient();

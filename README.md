@@ -22,7 +22,9 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 - **Color modes**: Mod (cyclic) for consistent color detail at all zoom levels, or Division (linear) for smooth gradients
 - **Click and drag panning**: Drag to pan the viewport — the raster image shifts with the cursor for instant visual feedback, then re-renders on release
 - **Quadtree cache**: Caches iteration counts in complex-plane coordinates, preserved across zoom and pan operations. Automatically disabled at extreme deep zoom where double-precision keys can't distinguish pixels.
-- **Custom color gradients**: Full gradient editor with save/load support
+- **Custom color gradients**: Full gradient editor with save/load support. Double-click a stop marker in the preview bar to open a color chooser — R/G/B control points auto-update to match.
+- **Palette-to-gradient**: Click any color in the palette while the fractal tool is active to instantly generate a gradient favoring that color with triadic complementary hues
+- **"I Feel Lucky"**: Button that finds a random interesting Mandelbrot location with varied boundary detail
 - **Save/Load locations**: Export and import fractal coordinates as JSON for bookmarking and sharing
 - **Preset locations**: Built-in menu with interesting locations from Seahorse Valley to 10^18 zoom
 - **Async rendering**: Non-blocking renders with cancellation support for responsive UI
@@ -176,6 +178,8 @@ public final class MyFractalType implements FractalType {
 ### Features
 
 - ~~**Click and drag panning**~~ DONE — Raster image shifts with cursor, re-renders on release
+- ~~**Gradient color picker**~~ DONE — Double-click stop markers in gradient preview bar to pick colors visually
+- ~~**Palette-to-gradient**~~ DONE — Click palette colors to auto-generate triadic gradients
+- ~~**"I Feel Lucky"**~~ DONE — Random interesting Mandelbrot location finder
 - **More fractal types** — Mandelbulb/Mandelbox (3D), Sierpinski triangle/carpet, Koch snowflake (IFS fractals)
 - **Animations** — Iteration animation, zoom animation, palette cycle animation
-- **Random location explorer** — Heuristic-based discovery of interesting fractal locations
