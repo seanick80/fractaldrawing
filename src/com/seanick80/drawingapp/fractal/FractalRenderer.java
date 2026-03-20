@@ -41,11 +41,40 @@ public class FractalRenderer {
 
     private final ReentrantLock renderLock = new ReentrantLock();
 
+    // Pre-allocated buffers (resized lazily when dimensions change)
+    private int[] renderRgb = null;
+    private int[] renderIters = null;
+    private boolean[] renderCacheHit = null;
+    private double[] refOrbitRe = null;
+    private double[] refOrbitIm = null;
+    private int bufferWidth, bufferHeight;
+    private int refOrbitCapacity;
+
     // BigDecimal progress tracking
     private final AtomicInteger bigDecimalCompletedRows = new AtomicInteger(0);
     private volatile int bigDecimalTotalRows = 0;
     private volatile boolean renderCancelled = false;
     private volatile int[] progressiveRgb = null;
+
+    private void ensureBuffers(int width, int height) {
+        int size = width * height;
+        if (renderRgb == null || bufferWidth != width || bufferHeight != height) {
+            renderRgb = new int[size];
+            renderIters = new int[size];
+            renderCacheHit = new boolean[size];
+            bufferWidth = width;
+            bufferHeight = height;
+        }
+    }
+
+    private void ensureRefOrbit(int maxIter) {
+        int needed = maxIter + 1;
+        if (refOrbitRe == null || refOrbitCapacity < needed) {
+            refOrbitRe = new double[needed];
+            refOrbitIm = new double[needed];
+            refOrbitCapacity = needed;
+        }
+    }
 
     public FractalType getType() { return type; }
     public void setType(FractalType type) {
@@ -208,14 +237,15 @@ public class FractalRenderer {
 
     private BufferedImage renderDouble(int width, int height, ColorGradient gradient) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        int[] rgb = new int[width * height];
+        ensureBuffers(width, height);
+        int[] rgb = renderRgb;
+        int[] iters = renderIters;
+        boolean[] cacheHit = renderCacheHit;
+        java.util.Arrays.fill(cacheHit, false);
 
         FractalColorMapper mapper = buildColorMapper(gradient);
         ViewportCalculator.DoubleViewport vp = ViewportCalculator.computeDouble(
                 minReal, maxReal, minImag, maxImag, width, height);
-
-        int[] iters = new int[width * height];
-        boolean[] cacheHit = new boolean[width * height];
 
         cache.resetStats();
 
@@ -260,7 +290,9 @@ public class FractalRenderer {
 
     private BufferedImage renderBigDecimal(int width, int height, ColorGradient gradient,
                                            BigDecimal rangeReal, BigDecimal rangeImag) {
-        int[] rgb = new int[width * height];
+        ensureBuffers(width, height);
+        int[] rgb = renderRgb;
+        java.util.Arrays.fill(rgb, 0);
         progressiveRgb = rgb;
         bigDecimalCompletedRows.set(0);
         bigDecimalTotalRows = height;
@@ -281,8 +313,9 @@ public class FractalRenderer {
         PerturbationStrategy strategy = type.getPerturbationStrategy();
 
         // 1. Compute reference orbit at center using BigDecimal
-        double[] refZr = new double[maxIterations + 1];
-        double[] refZi = new double[maxIterations + 1];
+        ensureRefOrbit(maxIterations);
+        double[] refZr = refOrbitRe;
+        double[] refZi = refOrbitIm;
 
         int refEscapeIter = strategy.computeReferenceOrbit(
             vp.centerReal, vp.centerImag, maxIterations, mc, refZr, refZi);
@@ -293,64 +326,38 @@ public class FractalRenderer {
         double halfW = (width - 1) / 2.0;
         double halfH = (height - 1) / 2.0;
 
-        // 3. Interior pruning (Mariani-Silver): divide image into large blocks,
-        //    iterate every boundary pixel with BigDecimal. If all boundary pixels
-        //    are interior (maxIterations), the entire block is interior — fill black.
+        // Pre-compute BigDecimal pixel coordinates for boundary checks and glitch fallback
+        BigDecimal[] pixelCx = new BigDecimal[width];
+        BigDecimal[] pixelCy = new BigDecimal[height];
+        for (int col = 0; col < width; col++) {
+            pixelCx[col] = vp.minReal.add(vp.scaleX.multiply(BigDecimal.valueOf(col), mc), mc);
+        }
+        for (int row = 0; row < height; row++) {
+            pixelCy[row] = vp.minImag.add(vp.scaleY.multiply(BigDecimal.valueOf(row), mc), mc);
+        }
+
+        // 3. Hierarchical interior pruning: recursively subdivide the image into blocks.
+        //    If a block's boundary pixels are all interior (maxIterations), skip the
+        //    entire block. Otherwise subdivide into 4 quadrants down to MIN_BLOCK_SIZE.
         int nThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService pool;
         int blackRgb = Color.BLACK.getRGB();
 
-        int blockW = 50, blockH = 100;
-        int blocksX = (width + blockW - 1) / blockW;
-        int blocksY = (height + blockH - 1) / blockH;
-        boolean[] interiorBlock = new boolean[blocksX * blocksY];
+        boolean[] interiorPixel = new boolean[width * height];
 
         if (interiorPruning && !renderCancelled) {
-            // Phase 1: Check every boundary pixel of each block using BigDecimal
+            // Submit a grid of initial blocks for parallelism, each with hierarchical subdivision
+            int initBlockW = 50, initBlockH = 50;
             pool = Executors.newFixedThreadPool(nThreads);
-            for (int by = 0; by < blocksY; by++) {
-                for (int bx = 0; bx < blocksX; bx++) {
-                    final int fbx = bx, fby = by;
+            for (int by = 0; by < height; by += initBlockH) {
+                for (int bx = 0; bx < width; bx += initBlockW) {
+                    final int sx = bx, sy = by;
+                    final int ex = Math.min(bx + initBlockW, width);
+                    final int ey = Math.min(by + initBlockH, height);
                     pool.submit(() -> {
                         if (renderCancelled) return;
-                        int startX = fbx * blockW;
-                        int startY = fby * blockH;
-                        int endX = Math.min(startX + blockW, width);
-                        int endY = Math.min(startY + blockH, height);
-                        int bIdx = fby * blocksX + fbx;
-
-                        // Iterate all boundary pixels
-                        boolean allInterior = true;
-                        // Top and bottom edges
-                        for (int px = startX; px < endX && allInterior; px++) {
-                            if (renderCancelled) return;
-                            allInterior = isBoundaryPixelInterior(px, startY,
-                                vp.minReal, vp.minImag, vp.scaleX, vp.scaleY, mc);
-                            if (allInterior && endY - 1 > startY) {
-                                allInterior = isBoundaryPixelInterior(px, endY - 1,
-                                    vp.minReal, vp.minImag, vp.scaleX, vp.scaleY, mc);
-                            }
-                        }
-                        // Left and right edges (excluding corners already checked)
-                        for (int py = startY + 1; py < endY - 1 && allInterior; py++) {
-                            if (renderCancelled) return;
-                            allInterior = isBoundaryPixelInterior(startX, py,
-                                vp.minReal, vp.minImag, vp.scaleX, vp.scaleY, mc);
-                            if (allInterior && endX - 1 > startX) {
-                                allInterior = isBoundaryPixelInterior(endX - 1, py,
-                                    vp.minReal, vp.minImag, vp.scaleX, vp.scaleY, mc);
-                            }
-                        }
-
-                        if (allInterior) {
-                            interiorBlock[bIdx] = true;
-                            // Fill entire block with black
-                            for (int py = startY; py < endY; py++) {
-                                for (int px = startX; px < endX; px++) {
-                                    rgb[py * width + px] = blackRgb;
-                                }
-                            }
-                        }
+                        pruneInteriorHierarchical(sx, sy, ex, ey,
+                            pixelCx, pixelCy, mc, interiorPixel, rgb, width, blackRgb);
                     });
                 }
             }
@@ -372,15 +379,13 @@ public class FractalRenderer {
 
         for (int row = 0; row < height; row++) {
             final int r = row;
-            final int rowBlockY = r / blockH;
             pool.submit(() -> {
                 if (renderCancelled) return;
                 double dci = (r - halfH) * dScaleY;
                 for (int col = 0; col < width; col++) {
                     if (renderCancelled) return;
-                    int blockIdx = rowBlockY * blocksX + (col / blockW);
-                    if (interiorBlock[blockIdx]) {
-                        continue; // Already filled with black
+                    if (interiorPixel[r * width + col]) {
+                        continue; // Already filled with black by pruning
                     }
                     double dcr = (col - halfW) * dScaleX;
                     int idx = r * width + col;
@@ -389,9 +394,7 @@ public class FractalRenderer {
 
                     if (iter == PerturbationStrategy.GLITCH_DETECTED) {
                         // Fallback to full BigDecimal for this pixel
-                        BigDecimal cx = vp.minReal.add(vp.scaleX.multiply(new BigDecimal(col), mc), mc);
-                        BigDecimal cy = vp.minImag.add(vp.scaleY.multiply(new BigDecimal(r), mc), mc);
-                        iter = type.iterateBig(cx, cy, maxIterations, mc);
+                        iter = type.iterateBig(pixelCx[col], pixelCy[r], maxIterations, mc);
                     }
 
                     rgb[idx] = mapper.colorForIter(iter);
@@ -421,13 +424,103 @@ public class FractalRenderer {
         return image;
     }
 
-    private boolean isBoundaryPixelInterior(int px, int py,
-                                               BigDecimal minR, BigDecimal minI,
-                                               BigDecimal scaleX, BigDecimal scaleY,
-                                               MathContext mc) {
-        BigDecimal cx = minR.add(scaleX.multiply(new BigDecimal(px), mc), mc);
-        BigDecimal cy = minI.add(scaleY.multiply(new BigDecimal(py), mc), mc);
-        return type.iterateBig(cx, cy, maxIterations, mc) >= maxIterations;
+    private static final int MIN_BLOCK_SIZE = 8;
+
+    /**
+     * Hierarchical interior pruning. Checks boundary pixels of the given rectangle.
+     * If all are interior (maxIterations), fills the block black and marks pixels
+     * as interior. Otherwise subdivides into 4 quadrants and recurses.
+     */
+    private void pruneInteriorHierarchical(int startX, int startY, int endX, int endY,
+                                            BigDecimal[] pixelCx, BigDecimal[] pixelCy,
+                                            MathContext mc, boolean[] interiorPixel,
+                                            int[] rgb, int imgWidth, int blackRgb) {
+        if (renderCancelled) return;
+        int blockW = endX - startX;
+        int blockH = endY - startY;
+        if (blockW <= 1 || blockH <= 1) return;
+
+        // Quick corner check: if no corners are interior, skip this block entirely
+        boolean anyCornerInterior =
+            type.iterateBig(pixelCx[startX], pixelCy[startY], maxIterations, mc) >= maxIterations
+            || type.iterateBig(pixelCx[endX - 1], pixelCy[startY], maxIterations, mc) >= maxIterations
+            || type.iterateBig(pixelCx[startX], pixelCy[endY - 1], maxIterations, mc) >= maxIterations
+            || type.iterateBig(pixelCx[endX - 1], pixelCy[endY - 1], maxIterations, mc) >= maxIterations;
+        if (!anyCornerInterior) return;
+
+        // Check all boundary pixels, tracking both allInterior and anyInterior
+        boolean allInterior = true;
+        boolean anyInterior = false;
+
+        // Top and bottom edges
+        for (int px = startX; px < endX; px++) {
+            if (renderCancelled) return;
+            if (type.iterateBig(pixelCx[px], pixelCy[startY], maxIterations, mc) >= maxIterations) {
+                anyInterior = true;
+            } else {
+                allInterior = false;
+            }
+            if (endY - 1 > startY) {
+                if (type.iterateBig(pixelCx[px], pixelCy[endY - 1], maxIterations, mc) >= maxIterations) {
+                    anyInterior = true;
+                } else {
+                    allInterior = false;
+                }
+            }
+            // Early exit: if we've seen both types we know it's mixed
+            if (anyInterior && !allInterior && (blockW <= MIN_BLOCK_SIZE && blockH <= MIN_BLOCK_SIZE)) return;
+        }
+        // Left and right edges (excluding corners)
+        for (int py = startY + 1; py < endY - 1; py++) {
+            if (renderCancelled) return;
+            if (type.iterateBig(pixelCx[startX], pixelCy[py], maxIterations, mc) >= maxIterations) {
+                anyInterior = true;
+            } else {
+                allInterior = false;
+            }
+            if (endX - 1 > startX) {
+                if (type.iterateBig(pixelCx[endX - 1], pixelCy[py], maxIterations, mc) >= maxIterations) {
+                    anyInterior = true;
+                } else {
+                    allInterior = false;
+                }
+            }
+            if (anyInterior && !allInterior && (blockW <= MIN_BLOCK_SIZE && blockH <= MIN_BLOCK_SIZE)) return;
+        }
+
+        if (allInterior) {
+            // Entire block is interior — fill black and mark
+            for (int py = startY; py < endY; py++) {
+                for (int px = startX; px < endX; px++) {
+                    int idx = py * imgWidth + px;
+                    interiorPixel[idx] = true;
+                    rgb[idx] = blackRgb;
+                }
+            }
+            return;
+        }
+
+        // No interior pixels on boundary — no point subdividing, skip
+        if (!anyInterior) return;
+
+        // Mixed boundary — subdivide if block is large enough
+        if (blockW <= MIN_BLOCK_SIZE && blockH <= MIN_BLOCK_SIZE) return;
+
+        int midX = startX + blockW / 2;
+        int midY = startY + blockH / 2;
+
+        if (blockW > MIN_BLOCK_SIZE && blockH > MIN_BLOCK_SIZE) {
+            pruneInteriorHierarchical(startX, startY, midX, midY, pixelCx, pixelCy, mc, interiorPixel, rgb, imgWidth, blackRgb);
+            pruneInteriorHierarchical(midX, startY, endX, midY, pixelCx, pixelCy, mc, interiorPixel, rgb, imgWidth, blackRgb);
+            pruneInteriorHierarchical(startX, midY, midX, endY, pixelCx, pixelCy, mc, interiorPixel, rgb, imgWidth, blackRgb);
+            pruneInteriorHierarchical(midX, midY, endX, endY, pixelCx, pixelCy, mc, interiorPixel, rgb, imgWidth, blackRgb);
+        } else if (blockW > MIN_BLOCK_SIZE) {
+            pruneInteriorHierarchical(startX, startY, midX, endY, pixelCx, pixelCy, mc, interiorPixel, rgb, imgWidth, blackRgb);
+            pruneInteriorHierarchical(midX, startY, endX, endY, pixelCx, pixelCy, mc, interiorPixel, rgb, imgWidth, blackRgb);
+        } else {
+            pruneInteriorHierarchical(startX, startY, endX, midY, pixelCx, pixelCy, mc, interiorPixel, rgb, imgWidth, blackRgb);
+            pruneInteriorHierarchical(startX, midY, endX, endY, pixelCx, pixelCy, mc, interiorPixel, rgb, imgWidth, blackRgb);
+        }
     }
 
     /**
@@ -436,7 +529,9 @@ public class FractalRenderer {
      */
     private BufferedImage renderPureBigDecimal(int width, int height, ColorGradient gradient,
                                                 BigDecimal rangeReal, BigDecimal rangeImag) {
-        int[] rgb = new int[width * height];
+        ensureBuffers(width, height);
+        int[] rgb = renderRgb;
+        java.util.Arrays.fill(rgb, 0);
         progressiveRgb = rgb;
         bigDecimalCompletedRows.set(0);
         bigDecimalTotalRows = height;
@@ -451,6 +546,16 @@ public class FractalRenderer {
         ViewportCalculator.BigViewport vp = ViewportCalculator.computeBig(
                 minReal, maxReal, minImag, maxImag, rangeReal, rangeImag, width, height, mc);
 
+        // Pre-compute BigDecimal pixel coordinates
+        BigDecimal[] pxCx = new BigDecimal[width];
+        BigDecimal[] pxCy = new BigDecimal[height];
+        for (int col = 0; col < width; col++) {
+            pxCx[col] = vp.minReal.add(vp.scaleX.multiply(BigDecimal.valueOf(col), mc), mc);
+        }
+        for (int row = 0; row < height; row++) {
+            pxCy[row] = vp.minImag.add(vp.scaleY.multiply(BigDecimal.valueOf(row), mc), mc);
+        }
+
         int nThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService pool = Executors.newFixedThreadPool(nThreads);
 
@@ -460,9 +565,7 @@ public class FractalRenderer {
                 if (renderCancelled) return;
                 for (int col = 0; col < width; col++) {
                     if (renderCancelled) return;
-                    BigDecimal cx = vp.minReal.add(vp.scaleX.multiply(new BigDecimal(col), mc), mc);
-                    BigDecimal cy = vp.minImag.add(vp.scaleY.multiply(new BigDecimal(r), mc), mc);
-                    int iter = type.iterateBig(cx, cy, maxIterations, mc);
+                    int iter = type.iterateBig(pxCx[col], pxCy[r], maxIterations, mc);
                     int idx = r * width + col;
                     rgb[idx] = mapper.colorForIter(iter);
                 }

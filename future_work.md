@@ -1,13 +1,11 @@
 
 # Future work
 
-## Memory hygiene
-We could pre-allocate and not reallocating any necessary buffers. Please apply static allocations on fractal tool initialization, and then try to remove any need to do any further allocations, especially in the perturbation and bigdecimal cases as that is where we need to do the most optimization
+## ~~Memory hygiene~~ DONE (2026-03-20)
+Pre-allocated render buffers (rgb, iters, cacheHit, refOrbit arrays) with lazy resize. Promoted BigDecimal constants (FOUR, TWO) to static finals in all fractal types and perturbation strategies. Cached PerturbationStrategy instances (singleton for Mandelbrot, per-instance for Julia). Pre-computed BigDecimal pixel coordinate arrays to eliminate per-pixel `new BigDecimal()` allocations in boundary checks and glitch fallback.
 
-
-## Quadtree based render job pruning
-Perturbation is really slow because it falls back in a lot of fill cases. 
-Can we explore a quadtree based evaluation at a much lower resolution, and only render quadtrees that are not completely surrounded by fill (which is how I refer to Max iteration count)? Then if all lower level quadtree items are also surrounded by fill, just assume all pixels represented by those quadtrees below are fills. We’ll see how much of a performance improvement we can get by detecting blocks full of fill first.
+## ~~Quadtree based render job pruning~~ DONE (2026-03-20)
+Replaced flat 50×100 block interior pruning with hierarchical subdivision. Each 50×50 initial block is checked: 4-corner quick rejection skips blocks with no interior pixels, then full boundary check with recursive subdivision down to 8×8 minimum. Blocks with all-interior boundaries are filled black and skipped by the perturbation phase. Mixed-boundary blocks are subdivided into quadrants for finer-grained pruning. No regression on exterior-heavy renders; should significantly help interior-heavy renders (e.g., Mandelbrot cardioid).
 
 ## Precalculating individual pixel lat, long values.
  One big chunk of time spent per iteration is to map a pixel to it’s real and imaginary coordinates.If you calculate the real axis and the imaginary axis of the current viewport once, then pass those values in to each cell worker, you’re saving 2-4 orders of magnitude of calculation on just that one value.
