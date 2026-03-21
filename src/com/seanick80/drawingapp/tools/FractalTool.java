@@ -438,7 +438,12 @@ public class FractalTool implements Tool {
 
         var cache = renderer.getCache();
         if (bigDecimalMode) {
-            cacheLabel.setText("Cache: off (BigDecimal)");
+            int prevHits = renderer.getPrevRenderCacheHits();
+            if (prevHits > 0) {
+                cacheLabel.setText(String.format("Cache: %dk reused", prevHits / 1000));
+            } else {
+                cacheLabel.setText("Cache: off (BigDecimal)");
+            }
         } else {
             int lookups = cache.getLookups();
             if (lookups > 0) {

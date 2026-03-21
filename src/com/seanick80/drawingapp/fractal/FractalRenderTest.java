@@ -59,6 +59,10 @@ public class FractalRenderTest {
         // Partial render bug reproduction
         testPartialRenderBug();
 
+        // Previous-render cache tests
+        testPrevRenderCacheAtShallowZoom();
+        testPrevRenderCacheAtDeepZoom();
+
         // Phase C: New fractal type tests (T2.6-T2.8, T3.1-T3.5)
         testBurningShipIteration();
         testTricornIteration();
@@ -1073,6 +1077,161 @@ public class FractalRenderTest {
               falseBlackPT < TOTAL * 0.10);
         check("BIGDECIMAL+pruning false-black count < 10% of image (got " + falseBlackBDPrune + ")",
               falseBlackBDPrune < TOTAL * 0.10);
+    }
+
+    /**
+     * Test cache behavior at shallow zoom (double-precision quadtree path).
+     * Renders the default Mandelbrot view, then zooms 2x and pans,
+     * verifying the quadtree produces cache hits and correct images.
+     */
+    private static void testPrevRenderCacheAtShallowZoom() {
+        System.out.println();
+        System.out.println("  -- Cache at Shallow Zoom (double quadtree) --");
+
+        int W = 100, H = 100;
+        ColorGradient g = gradient();
+
+        FractalRenderer r = new FractalRenderer();
+        r.setType(FractalType.MANDELBROT);
+        r.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+
+        // First render: default view
+        r.setBounds(-2.0, 2.0, -2.0, 2.0);
+        r.setMaxIterations(256);
+        BufferedImage img1 = r.render(W, H, g);
+        int colors1 = countUniqueColors(img1);
+        check("shallow zoom first render has detail (colors=" + colors1 + ")", colors1 > 10);
+
+        // Second render: zoom 2x into center
+        r.setBounds(-1.0, 1.0, -1.0, 1.0);
+        BufferedImage img2 = r.render(W, H, g);
+
+        int colors2 = countUniqueColors(img2);
+        check("shallow zoom 2x render has detail (colors=" + colors2 + ")", colors2 > 10);
+
+        // Verify correctness vs fresh render
+        FractalRenderer rFresh = new FractalRenderer();
+        rFresh.setType(FractalType.MANDELBROT);
+        rFresh.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+        rFresh.setBounds(-1.0, 1.0, -1.0, 1.0);
+        rFresh.setMaxIterations(256);
+        BufferedImage imgFresh = rFresh.render(W, H, g);
+        check("shallow cached render matches from-scratch render", imagesEqual(img2, imgFresh));
+
+        // Pan: shift right by 10 pixels
+        double scaleX = 2.0 / (W - 1); // range=2.0, width-1 pixels
+        double panDist = scaleX * 10;
+        r.setBounds(-1.0 + panDist, 1.0 + panDist, -1.0, 1.0);
+        BufferedImage img3 = r.render(W, H, g);
+
+        var cache = r.getCache();
+        int panHits = cache.getHits();
+        int panLookups = cache.getLookups();
+        double panHitPct = panLookups > 0 ? 100.0 * panHits / panLookups : 0;
+        System.out.printf("  INFO: Shallow pan quadtree hits: %d/%d (%.1f%%)%n",
+                panHits, panLookups, panHitPct);
+        check("shallow pan has quadtree cache hits (got " +
+              String.format("%.1f%%", panHitPct) + ")", panHitPct > 30.0);
+
+        // Verify pan correctness
+        FractalRenderer rPanFresh = new FractalRenderer();
+        rPanFresh.setType(FractalType.MANDELBROT);
+        rPanFresh.setRenderMode(FractalRenderer.RenderMode.DOUBLE);
+        rPanFresh.setBounds(-1.0 + panDist, 1.0 + panDist, -1.0, 1.0);
+        rPanFresh.setMaxIterations(256);
+        BufferedImage imgPanFresh = rPanFresh.render(W, H, g);
+        check("shallow pan cached render matches from-scratch render", imagesEqual(img3, imgPanFresh));
+    }
+
+    /**
+     * Test that the previous-render cache produces cache hits at deep zoom.
+     * Renders a deep zoom location, then zooms in 2x and verifies that
+     * the second render reuses pixels from the first render.
+     * Also verifies that the cached render matches a from-scratch render.
+     */
+    private static void testPrevRenderCacheAtDeepZoom() {
+        System.out.println();
+        System.out.println("  -- Previous-Render Cache at Deep Zoom --");
+
+        int W = 50, H = 50;
+        ColorGradient g = gradient();
+
+        // Use a deep zoom location where double-precision cache is useless
+        FractalRenderer r = new FractalRenderer();
+        r.setType(FractalType.MANDELBROT);
+        r.setRenderMode(FractalRenderer.RenderMode.BIGDECIMAL);
+
+        // First render at a deep zoom location
+        BigDecimal minR1 = new BigDecimal("-0.6596578041282634");
+        BigDecimal maxR1 = new BigDecimal("-0.6596578041282433");
+        BigDecimal minI1 = new BigDecimal("-0.4505474984324465");
+        BigDecimal maxI1 = new BigDecimal("-0.4505474984324264");
+        r.setBounds(minR1, maxR1, minI1, maxI1);
+        r.setMaxIterations(256);
+
+        BufferedImage img1 = r.render(W, H, g);
+        int hits1 = r.getPrevRenderCacheHits();
+        System.out.printf("  INFO: First render prev-cache hits: %d (expected 0)%n", hits1);
+        check("first render has 0 prev-cache hits", hits1 == 0);
+
+        // Second render: zoom 2x into the center of the first render
+        BigDecimal rangeR = maxR1.subtract(minR1);
+        BigDecimal rangeI = maxI1.subtract(minI1);
+        BigDecimal quarter = new BigDecimal("0.25");
+        BigDecimal minR2 = minR1.add(rangeR.multiply(quarter));
+        BigDecimal maxR2 = maxR1.subtract(rangeR.multiply(quarter));
+        BigDecimal minI2 = minI1.add(rangeI.multiply(quarter));
+        BigDecimal maxI2 = maxI1.subtract(rangeI.multiply(quarter));
+        r.setBounds(minR2, maxR2, minI2, maxI2);
+
+        BufferedImage img2 = r.render(W, H, g);
+        int hits2 = r.getPrevRenderCacheHits();
+        double hitPct = 100.0 * hits2 / (W * H);
+        System.out.printf("  INFO: Second render (2x zoom) prev-cache hits: %d/%d (%.1f%%)%n",
+                hits2, W * H, hitPct);
+        // With tight tolerance, ~50% of new pixels land exactly on old pixel positions
+        // for a centered 2x zoom (every other pixel aligns with the old grid)
+        check("2x zoom produces >20% prev-render cache hits (got " +
+              String.format("%.1f%%", hitPct) + ")", hitPct > 20.0);
+
+        // Verify correctness: render same view from scratch (no prev-render data)
+        FractalRenderer rFresh = new FractalRenderer();
+        rFresh.setType(FractalType.MANDELBROT);
+        rFresh.setRenderMode(FractalRenderer.RenderMode.BIGDECIMAL);
+        rFresh.setBounds(minR2, maxR2, minI2, maxI2);
+        rFresh.setMaxIterations(256);
+        BufferedImage imgFresh = rFresh.render(W, H, g);
+
+        boolean match = imagesEqual(img2, imgFresh);
+        check("cached render matches from-scratch render", match);
+
+        // Test pan: shift right by 12 pixels (integer pixel shift, like mouse drag).
+        // In the actual app, pan distance is always an integer multiple of scaleX,
+        // so grids align perfectly and all overlapping pixels get cache hits.
+        BigDecimal panScaleX = maxR2.subtract(minR2).divide(BigDecimal.valueOf(W - 1),
+            new java.math.MathContext(35, java.math.RoundingMode.HALF_UP));
+        BigDecimal panShift = panScaleX.multiply(BigDecimal.valueOf(12));
+        BigDecimal minR3 = minR2.add(panShift);
+        BigDecimal maxR3 = maxR2.add(panShift);
+        r.setBounds(minR3, maxR3, minI2, maxI2);
+
+        BufferedImage img3 = r.render(W, H, g);
+        int hits3 = r.getPrevRenderCacheHits();
+        double hitPctPan = 100.0 * hits3 / (W * H);
+        System.out.printf("  INFO: Pan render prev-cache hits: %d/%d (%.1f%%)%n",
+                hits3, W * H, hitPctPan);
+        // 12 pixel shift on 50-wide image = 38/50 = 76% overlap
+        check("pan produces >60% prev-render cache hits (got " +
+              String.format("%.1f%%", hitPctPan) + ")", hitPctPan > 60.0);
+
+        // Verify pan correctness
+        FractalRenderer rPanFresh = new FractalRenderer();
+        rPanFresh.setType(FractalType.MANDELBROT);
+        rPanFresh.setRenderMode(FractalRenderer.RenderMode.BIGDECIMAL);
+        rPanFresh.setBounds(minR3, maxR3, minI2, maxI2);
+        rPanFresh.setMaxIterations(256);
+        BufferedImage imgPanFresh = rPanFresh.render(W, H, g);
+        check("pan cached render matches from-scratch render", imagesEqual(img3, imgPanFresh));
     }
 
     // --- Helpers ---

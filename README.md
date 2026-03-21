@@ -21,7 +21,7 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 - **Render modes**: AUTO (default), DOUBLE, BIGDECIMAL, PERTURBATION — selectable for benchmarking
 - **Color modes**: Mod (cyclic) for consistent color detail at all zoom levels, or Division (linear) for smooth gradients
 - **Click and drag panning**: Drag to pan the viewport — the raster image shifts with the cursor for instant visual feedback, then re-renders on release
-- **Quadtree cache**: Caches iteration counts in complex-plane coordinates, preserved across zoom and pan operations. Automatically disabled at extreme deep zoom where double-precision keys can't distinguish pixels.
+- **Cross-render cache**: Double-precision quadtree cache for moderate zoom; BigDecimal pixel-mapping cache for deep zoom. On zoom, viewport origin snapping aligns pixel grids for 25% reuse; on pan, 75%+ reuse. Iteration results from the previous render are mapped to new pixel positions via O(width+height) BigDecimal divisions.
 - **Custom color gradients**: Full gradient editor with save/load support. Double-click a stop marker in the preview bar to open a color chooser — R/G/B control points auto-update to match.
 - **Palette-to-gradient**: Click any color in the palette while the fractal tool is active to instantly generate a gradient favoring that color with triadic complementary hues
 - **"I Feel Lucky"**: Button that finds a random interesting Mandelbrot location with varied boundary detail
@@ -46,7 +46,7 @@ build.cmd run
 ## Testing
 
 ```bash
-# Run regression tests (104 assertions covering all render modes and fractal types)
+# Run regression tests (114 assertions covering all render modes and fractal types)
 ./test.sh       # Unix/Git Bash
 test.cmd        # Windows
 
@@ -68,6 +68,8 @@ Tests cover:
 - Interior pruning correctness: pixel-identical output with pruning on/off at spiky edges
 - Load/save correctness: Mandelbrot type preserved when JSON contains Julia fields
 - Deep zoom cache safety: no false hits from stale double-precision cache entries
+- Previous-render BigDecimal cache: 25% reuse on 2x zoom, 75% on pan, pixel-identical to from-scratch
+- Shallow zoom quadtree cache: pan reuse verified with correctness checks
 
 ## Benchmarking
 
@@ -171,7 +173,7 @@ public final class MyFractalType implements FractalType {
 - ~~**Memory hygiene**~~ DONE — Pre-allocated render buffers, promoted BigDecimal constants to static finals, cached perturbation strategies, pre-computed pixel coordinate arrays
 - ~~**Interior pruning**~~ DONE — Hierarchical quadtree subdivision with 4-corner quick rejection
 - ~~**Pre-calculate pixel coordinates**~~ DONE — One-time computation of real/imaginary axis arrays per render
-- ~~**Cross-render cache reuse**~~ DONE — Cache preserved across zoom/pan, wired into BigDecimal paths, auto-disabled at extreme deep zoom
+- ~~**Cross-render cache reuse**~~ DONE — Double-precision quadtree for moderate zoom; BigDecimal pixel-mapping cache for deep zoom with viewport origin snapping (25% reuse on zoom, 75%+ on pan)
 - **Perturbation for new types** — Burning Ship, Tricorn, and Magnet currently fall back to pure BigDecimal for deep zoom
 - **Custom FixedPrecisionFloat** — Mutable fixed-width binary float using `long[]` limbs as a faster alternative to BigDecimal
 
