@@ -64,7 +64,3 @@ These don't use escape-time iteration — they build geometry via recursive subd
 - Magnet Type II would follow the same pattern as Type I
 - IFS fractals need a different renderer since they don't map pixels to escape counts — probably a recursive geometry builder that draws to the canvas directly
 - 3D fractals (Mandelbulb, Mandelbox) would need ray-marching or distance-estimation rendering, which is a larger undertaking
-
-
-##  Random location explorer
-I had calculated a random location explorer heuristic, basically selecting random numbers between -2, 2 in both imaginary and real dimensions plus a random zoom level between -4 and say -8, then rendering 8 points and seeing if there were at least 4 different palette entries among those 8 images and they aren’t all fill - I set a timer to try to calculate a new random interesting point and tried up to 10000 times. I almost never saw a failure to find an interesting point. Now that we have claude, I am certain we could find a way more interesting heuristic to select random interesting locations to render.

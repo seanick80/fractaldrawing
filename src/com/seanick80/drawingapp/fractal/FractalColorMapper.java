@@ -9,6 +9,8 @@ import java.awt.Color;
  */
 public final class FractalColorMapper {
 
+    private static final int BLACK_RGB = Color.BLACK.getRGB();
+
     private final int[] lut;
     private final int maxIterations;
     private final FractalRenderer.ColorMode colorMode;
@@ -25,7 +27,7 @@ public final class FractalColorMapper {
 
     /** Map an iteration count to an ARGB colour value. */
     public int colorForIter(int iter) {
-        if (iter >= maxIterations) return Color.BLACK.getRGB();
+        if (iter >= maxIterations) return BLACK_RGB;
         if (colorMode == FractalRenderer.ColorMode.MOD) return lut[iter % lut.length];
         return lut[iter];
     }

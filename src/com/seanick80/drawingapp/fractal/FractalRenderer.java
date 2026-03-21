@@ -26,6 +26,7 @@ public class FractalRenderer {
     public enum ColorMode { MOD, DIVISION }
 
     private static final double BIGDECIMAL_THRESHOLD = 1e-13;
+    private static final BigDecimal TOLERANCE_FACTOR = new BigDecimal("0.01");
 
     private FractalType type = FractalType.MANDELBROT;
     private RenderMode renderMode = RenderMode.AUTO;
@@ -45,6 +46,7 @@ public class FractalRenderer {
     private int[] renderRgb = null;
     private int[] renderIters = null;
     private boolean[] renderCacheHit = null;
+    private boolean[] renderInterior = null;
     private double[] refOrbitRe = null;
     private double[] refOrbitIm = null;
     private int bufferWidth, bufferHeight;
@@ -73,6 +75,7 @@ public class FractalRenderer {
             renderRgb = new int[size];
             renderIters = new int[size];
             renderCacheHit = new boolean[size];
+            renderInterior = new boolean[size];
             bufferWidth = width;
             bufferHeight = height;
         }
@@ -84,6 +87,23 @@ public class FractalRenderer {
             refOrbitRe = new double[needed];
             refOrbitIm = new double[needed];
             refOrbitCapacity = needed;
+        }
+    }
+
+    private void awaitPool(ExecutorService pool) {
+        pool.shutdown();
+        try {
+            while (!pool.isTerminated()) {
+                pool.awaitTermination(100, TimeUnit.MILLISECONDS);
+                if (renderCancelled) {
+                    pool.shutdownNow();
+                    break;
+                }
+            }
+        } catch (InterruptedException e) {
+            renderCancelled = true;
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -219,9 +239,8 @@ public class FractalRenderer {
         // For a 2x zoom, old pixels are at 2× new pixel spacing, so only ~50% of
         // new pixels land on old pixel positions. Using 0.01 × min(old, new) spacing
         // ensures we only match true coordinate overlaps, not nearby-but-different pixels.
-        BigDecimal tolFactor = new BigDecimal("0.01");
-        BigDecimal toleranceR = newScaleX.abs().min(prevScaleX.abs()).multiply(tolFactor, mc);
-        BigDecimal toleranceI = newScaleY.abs().min(prevScaleY.abs()).multiply(tolFactor, mc);
+        BigDecimal toleranceR = newScaleX.abs().min(prevScaleX.abs()).multiply(TOLERANCE_FACTOR, mc);
+        BigDecimal toleranceI = newScaleY.abs().min(prevScaleY.abs()).multiply(TOLERANCE_FACTOR, mc);
 
         // Map new columns to old columns: O(newWidth) BigDecimal divisions
         int[] colMap = new int[newWidth];
@@ -344,6 +363,171 @@ public class FractalRenderer {
         return new FractalColorMapper(gradient, maxIterations, colorMode);
     }
 
+    /**
+     * Shared state for BigDecimal render methods. Created by setupBigDecimalRender(),
+     * consumed by the per-pixel loop, then passed to finalizeBigDecimalRender().
+     */
+    private static class BigDecimalRenderContext {
+        final int[] rgb;
+        final int[] iters;
+        final boolean[] cacheHit;
+        final FractalColorMapper mapper;
+        final MathContext mc;
+        final ViewportCalculator.BigViewport vp;
+        final BigDecimal[] pixelCx;
+        final BigDecimal[] pixelCy;
+        final double cacheTolerance;
+        final boolean cacheUsable;
+        final int width;
+        final int height;
+        final BigDecimal rangeReal;
+        final BigDecimal rangeImag;
+
+        BigDecimalRenderContext(int[] rgb, int[] iters, boolean[] cacheHit,
+                                FractalColorMapper mapper, MathContext mc,
+                                ViewportCalculator.BigViewport vp,
+                                BigDecimal[] pixelCx, BigDecimal[] pixelCy,
+                                double cacheTolerance, boolean cacheUsable,
+                                int width, int height,
+                                BigDecimal rangeReal, BigDecimal rangeImag) {
+            this.rgb = rgb;
+            this.iters = iters;
+            this.cacheHit = cacheHit;
+            this.mapper = mapper;
+            this.mc = mc;
+            this.vp = vp;
+            this.pixelCx = pixelCx;
+            this.pixelCy = pixelCy;
+            this.cacheTolerance = cacheTolerance;
+            this.cacheUsable = cacheUsable;
+            this.width = width;
+            this.height = height;
+            this.rangeReal = rangeReal;
+            this.rangeImag = rangeImag;
+        }
+    }
+
+    /**
+     * Shared setup for BigDecimal render methods: buffer initialization, precision
+     * calculation, viewport computation, pixel coordinate arrays, cache checks,
+     * and previous-render mapping.
+     */
+    private BigDecimalRenderContext setupBigDecimalRender(int width, int height,
+                                                          ColorGradient gradient,
+                                                          BigDecimal rangeReal,
+                                                          BigDecimal rangeImag) {
+        ensureBuffers(width, height);
+        int[] rgb = renderRgb;
+        int[] iters = renderIters;
+        boolean[] cacheHit = renderCacheHit;
+        java.util.Arrays.fill(rgb, 0);
+        java.util.Arrays.fill(iters, 0);
+        java.util.Arrays.fill(cacheHit, false);
+        progressiveRgb = rgb;
+        bigDecimalCompletedRows.set(0);
+        bigDecimalTotalRows = height;
+        renderCancelled = false;
+
+        FractalColorMapper mapper = buildColorMapper(gradient);
+
+        // Calculate precision: 20 + log10(zoom)
+        double zoom = 4.0 / Math.min(rangeReal.abs().doubleValue(), rangeImag.abs().doubleValue());
+        int precision = 20 + (int) Math.ceil(Math.log10(Math.max(zoom, 1)));
+        MathContext mc = new MathContext(precision, RoundingMode.HALF_UP);
+
+        ViewportCalculator.BigViewport vp = ViewportCalculator.computeBig(
+                minReal, maxReal, minImag, maxImag, rangeReal, rangeImag, width, height, mc);
+
+        // Snap viewport origin to align with previous render's pixel grid so that
+        // overlapping pixels fall at exactly the same complex-plane coordinates.
+        // The snap is at most 0.5 old pixels — visually imperceptible.
+        BigDecimal adjMinReal = vp.minReal;
+        BigDecimal adjMinImag = vp.minImag;
+        if (prevPixelCx != null && prevScaleX != null) {
+            BigDecimal offR = vp.minReal.subtract(prevPixelCx[0], mc);
+            adjMinReal = prevPixelCx[0].add(
+                offR.divide(prevScaleX, 0, RoundingMode.HALF_UP).multiply(prevScaleX, mc), mc);
+            BigDecimal offI = vp.minImag.subtract(prevPixelCy[0], mc);
+            adjMinImag = prevPixelCy[0].add(
+                offI.divide(prevScaleY, 0, RoundingMode.HALF_UP).multiply(prevScaleY, mc), mc);
+        }
+
+        BigDecimal[] pixelCx = new BigDecimal[width];
+        BigDecimal[] pixelCy = new BigDecimal[height];
+        for (int col = 0; col < width; col++) {
+            pixelCx[col] = adjMinReal.add(vp.scaleX.multiply(BigDecimal.valueOf(col), mc), mc);
+        }
+        for (int row = 0; row < height; row++) {
+            pixelCy[row] = adjMinImag.add(vp.scaleY.multiply(BigDecimal.valueOf(row), mc), mc);
+        }
+
+        double dScaleX = vp.scaleX.doubleValue();
+        double dScaleY = vp.scaleY.doubleValue();
+        double cacheTolerance = Math.min(dScaleX, dScaleY) * 0.1;
+        // At extreme deep zoom, double precision can't distinguish adjacent pixels.
+        // Cache keys become useless — all pixels map to the same double coordinate.
+        boolean cacheUsable = width > 1 && height > 1
+            && pixelCx[0].doubleValue() != pixelCx[1].doubleValue()
+            && pixelCy[0].doubleValue() != pixelCy[1].doubleValue();
+        if (!cacheUsable) {
+            cache.clear(); // Discard stale entries that would produce false hits
+        }
+        cache.resetStats();
+
+        // Previous-render cache: map new pixels to old pixels via BigDecimal coordinates.
+        // Works at any zoom depth — no double-precision keys needed.
+        prevRenderCacheHits = buildPrevRenderMapping(
+            pixelCx, pixelCy, width, height, vp.scaleX, vp.scaleY, mc,
+            iters, rgb, cacheHit, mapper);
+
+        return new BigDecimalRenderContext(rgb, iters, cacheHit, mapper, mc, vp,
+                                           pixelCx, pixelCy, cacheTolerance, cacheUsable,
+                                           width, height, rangeReal, rangeImag);
+    }
+
+    /**
+     * Shared teardown for BigDecimal render methods: cache insertion for newly
+     * computed pixels, prev-render save, and BufferedImage creation.
+     *
+     * @param ctx the render context from setup
+     * @param interiorPixel interior pixel mask (may be null if no pruning was done)
+     */
+    private BufferedImage finalizeBigDecimalRender(BigDecimalRenderContext ctx,
+                                                    boolean[] interiorPixel) {
+        // Insert newly computed pixels into cache (sequential — cache is not thread-safe for writes)
+        if (!renderCancelled && ctx.cacheUsable) {
+            for (int i = 0; i < ctx.width * ctx.height; i++) {
+                if ((interiorPixel != null && interiorPixel[i]) || ctx.cacheHit[i]) continue;
+                double cx = ctx.pixelCx[i % ctx.width].doubleValue();
+                double cy = ctx.pixelCy[i / ctx.width].doubleValue();
+                cache.insert(cx, cy, ctx.iters[i]);
+            }
+
+            double viewW = ctx.rangeReal.abs().doubleValue();
+            double viewH = ctx.rangeImag.abs().doubleValue();
+            cache.pruneOutside(
+                minReal.doubleValue() - viewW, maxReal.doubleValue() + viewW,
+                minImag.doubleValue() - viewH, maxImag.doubleValue() + viewH
+            );
+        }
+
+        // Save current render for next render's prev-render cache
+        if (!renderCancelled) {
+            prevPixelCx = ctx.pixelCx;
+            prevPixelCy = ctx.pixelCy;
+            prevIters = ctx.iters.clone();
+            prevWidth = ctx.width;
+            prevHeight = ctx.height;
+            prevScaleX = ctx.vp.scaleX;
+            prevScaleY = ctx.vp.scaleY;
+        }
+
+        BufferedImage image = new BufferedImage(ctx.width, ctx.height, BufferedImage.TYPE_INT_ARGB);
+        image.setRGB(0, 0, ctx.width, ctx.height, ctx.rgb, 0, ctx.width);
+        progressiveRgb = null;
+        return image;
+    }
+
     private BufferedImage renderDouble(int width, int height, ColorGradient gradient) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         ensureBuffers(width, height);
@@ -399,27 +583,16 @@ public class FractalRenderer {
 
     private BufferedImage renderBigDecimal(int width, int height, ColorGradient gradient,
                                            BigDecimal rangeReal, BigDecimal rangeImag) {
-        ensureBuffers(width, height);
-        int[] rgb = renderRgb;
-        int[] iters = renderIters;
-        boolean[] cacheHit = renderCacheHit;
-        java.util.Arrays.fill(rgb, 0);
-        java.util.Arrays.fill(iters, 0);
-        java.util.Arrays.fill(cacheHit, false);
-        progressiveRgb = rgb;
-        bigDecimalCompletedRows.set(0);
-        bigDecimalTotalRows = height;
-        renderCancelled = false;
-
-        FractalColorMapper mapper = buildColorMapper(gradient);
-
-        // Calculate precision: 20 + log10(zoom)
-        double zoom = 4.0 / Math.min(rangeReal.abs().doubleValue(), rangeImag.abs().doubleValue());
-        int precision = 20 + (int) Math.ceil(Math.log10(Math.max(zoom, 1)));
-        MathContext mc = new MathContext(precision, RoundingMode.HALF_UP);
-
-        ViewportCalculator.BigViewport vp = ViewportCalculator.computeBig(
-                minReal, maxReal, minImag, maxImag, rangeReal, rangeImag, width, height, mc);
+        BigDecimalRenderContext ctx = setupBigDecimalRender(width, height, gradient, rangeReal, rangeImag);
+        int[] rgb = ctx.rgb;
+        int[] iters = ctx.iters;
+        boolean[] cacheHit = ctx.cacheHit;
+        FractalColorMapper mapper = ctx.mapper;
+        MathContext mc = ctx.mc;
+        BigDecimal[] pixelCx = ctx.pixelCx;
+        BigDecimal[] pixelCy = ctx.pixelCy;
+        double cacheTolerance = ctx.cacheTolerance;
+        boolean cacheUsable = ctx.cacheUsable;
 
         // --- Perturbation theory: one BigDecimal reference orbit, all pixels in double ---
 
@@ -431,54 +604,13 @@ public class FractalRenderer {
         double[] refZi = refOrbitIm;
 
         int refEscapeIter = strategy.computeReferenceOrbit(
-            vp.centerReal, vp.centerImag, maxIterations, mc, refZr, refZi);
+            ctx.vp.centerReal, ctx.vp.centerImag, maxIterations, mc, refZr, refZi);
 
         // 2. Per-pixel deltas computed in double (pixel offset from center)
-        double dScaleX = vp.scaleX.doubleValue();
-        double dScaleY = vp.scaleY.doubleValue();
+        double dScaleX = ctx.vp.scaleX.doubleValue();
+        double dScaleY = ctx.vp.scaleY.doubleValue();
         double halfW = (width - 1) / 2.0;
         double halfH = (height - 1) / 2.0;
-
-        // Pre-compute BigDecimal pixel coordinates for boundary checks and glitch fallback.
-        // Snap viewport origin to align with previous render's pixel grid so that
-        // overlapping pixels fall at exactly the same complex-plane coordinates.
-        // The snap is at most 0.5 old pixels — visually imperceptible.
-        BigDecimal adjMinReal = vp.minReal;
-        BigDecimal adjMinImag = vp.minImag;
-        if (prevPixelCx != null && prevScaleX != null) {
-            BigDecimal offR = vp.minReal.subtract(prevPixelCx[0], mc);
-            adjMinReal = prevPixelCx[0].add(
-                offR.divide(prevScaleX, 0, RoundingMode.HALF_UP).multiply(prevScaleX, mc), mc);
-            BigDecimal offI = vp.minImag.subtract(prevPixelCy[0], mc);
-            adjMinImag = prevPixelCy[0].add(
-                offI.divide(prevScaleY, 0, RoundingMode.HALF_UP).multiply(prevScaleY, mc), mc);
-        }
-
-        BigDecimal[] pixelCx = new BigDecimal[width];
-        BigDecimal[] pixelCy = new BigDecimal[height];
-        for (int col = 0; col < width; col++) {
-            pixelCx[col] = adjMinReal.add(vp.scaleX.multiply(BigDecimal.valueOf(col), mc), mc);
-        }
-        for (int row = 0; row < height; row++) {
-            pixelCy[row] = adjMinImag.add(vp.scaleY.multiply(BigDecimal.valueOf(row), mc), mc);
-        }
-
-        double cacheTolerance = Math.min(dScaleX, dScaleY) * 0.1;
-        // At extreme deep zoom, double precision can't distinguish adjacent pixels.
-        // Cache keys become useless — all pixels map to the same double coordinate.
-        boolean cacheUsable = width > 1 && height > 1
-            && pixelCx[0].doubleValue() != pixelCx[1].doubleValue()
-            && pixelCy[0].doubleValue() != pixelCy[1].doubleValue();
-        if (!cacheUsable) {
-            cache.clear(); // Discard stale entries that would produce false hits
-        }
-        cache.resetStats();
-
-        // Previous-render cache: map new pixels to old pixels via BigDecimal coordinates.
-        // Works at any zoom depth — no double-precision keys needed.
-        prevRenderCacheHits = buildPrevRenderMapping(
-            pixelCx, pixelCy, width, height, vp.scaleX, vp.scaleY, mc,
-            iters, rgb, cacheHit, mapper);
 
         // 3. Hierarchical interior pruning: recursively subdivide the image into blocks.
         //    If a block's boundary pixels are all interior (maxIterations), skip the
@@ -487,7 +619,8 @@ public class FractalRenderer {
         ExecutorService pool;
         int blackRgb = Color.BLACK.getRGB();
 
-        boolean[] interiorPixel = new boolean[width * height];
+        boolean[] interiorPixel = renderInterior;
+        java.util.Arrays.fill(interiorPixel, false);
 
         if (interiorPruning && !renderCancelled) {
             // Submit a grid of initial blocks for parallelism, each with hierarchical subdivision
@@ -505,17 +638,7 @@ public class FractalRenderer {
                     });
                 }
             }
-            pool.shutdown();
-            try {
-                while (!pool.isTerminated()) {
-                    pool.awaitTermination(100, TimeUnit.MILLISECONDS);
-                    if (renderCancelled) { pool.shutdownNow(); break; }
-                }
-            } catch (InterruptedException e) {
-                renderCancelled = true;
-                pool.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
+            awaitPool(pool);
         }
 
         // Phase 2: Perturbation iteration for non-interior pixels
@@ -564,54 +687,9 @@ public class FractalRenderer {
             });
         }
 
-        pool.shutdown();
-        try {
-            while (!pool.isTerminated()) {
-                pool.awaitTermination(100, TimeUnit.MILLISECONDS);
-                if (renderCancelled) {
-                    pool.shutdownNow();
-                    break;
-                }
-            }
-        } catch (InterruptedException e) {
-            renderCancelled = true;
-            pool.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        awaitPool(pool);
 
-        // Insert newly computed pixels into cache (sequential — cache is not thread-safe for writes)
-        if (!renderCancelled && cacheUsable) {
-            for (int i = 0; i < width * height; i++) {
-                if (!interiorPixel[i] && !cacheHit[i]) {
-                    double cx = pixelCx[i % width].doubleValue();
-                    double cy = pixelCy[i / width].doubleValue();
-                    cache.insert(cx, cy, iters[i]);
-                }
-            }
-
-            double viewW = rangeReal.abs().doubleValue();
-            double viewH = rangeImag.abs().doubleValue();
-            cache.pruneOutside(
-                minReal.doubleValue() - viewW, maxReal.doubleValue() + viewW,
-                minImag.doubleValue() - viewH, maxImag.doubleValue() + viewH
-            );
-        }
-
-        // Save current render for next render's prev-render cache
-        if (!renderCancelled) {
-            prevPixelCx = pixelCx;
-            prevPixelCy = pixelCy;
-            prevIters = iters.clone();
-            prevWidth = width;
-            prevHeight = height;
-            prevScaleX = vp.scaleX;
-            prevScaleY = vp.scaleY;
-        }
-
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        image.setRGB(0, 0, width, height, rgb, 0, width);
-        progressiveRgb = null;
-        return image;
+        return finalizeBigDecimalRender(ctx, interiorPixel);
     }
 
     private static final int MIN_BLOCK_SIZE = 8;
@@ -719,64 +797,16 @@ public class FractalRenderer {
      */
     private BufferedImage renderPureBigDecimal(int width, int height, ColorGradient gradient,
                                                 BigDecimal rangeReal, BigDecimal rangeImag) {
-        ensureBuffers(width, height);
-        int[] rgb = renderRgb;
-        int[] iters = renderIters;
-        boolean[] cacheHit = renderCacheHit;
-        java.util.Arrays.fill(rgb, 0);
-        java.util.Arrays.fill(iters, 0);
-        java.util.Arrays.fill(cacheHit, false);
-        progressiveRgb = rgb;
-        bigDecimalCompletedRows.set(0);
-        bigDecimalTotalRows = height;
-        renderCancelled = false;
-
-        FractalColorMapper mapper = buildColorMapper(gradient);
-
-        double zoom = 4.0 / Math.min(rangeReal.abs().doubleValue(), rangeImag.abs().doubleValue());
-        int precision = 20 + (int) Math.ceil(Math.log10(Math.max(zoom, 1)));
-        MathContext mc = new MathContext(precision, RoundingMode.HALF_UP);
-
-        ViewportCalculator.BigViewport vp = ViewportCalculator.computeBig(
-                minReal, maxReal, minImag, maxImag, rangeReal, rangeImag, width, height, mc);
-
-        // Pre-compute BigDecimal pixel coordinates.
-        // Snap viewport origin to align with previous render's pixel grid.
-        BigDecimal adjMinReal = vp.minReal;
-        BigDecimal adjMinImag = vp.minImag;
-        if (prevPixelCx != null && prevScaleX != null) {
-            BigDecimal offR = vp.minReal.subtract(prevPixelCx[0], mc);
-            adjMinReal = prevPixelCx[0].add(
-                offR.divide(prevScaleX, 0, RoundingMode.HALF_UP).multiply(prevScaleX, mc), mc);
-            BigDecimal offI = vp.minImag.subtract(prevPixelCy[0], mc);
-            adjMinImag = prevPixelCy[0].add(
-                offI.divide(prevScaleY, 0, RoundingMode.HALF_UP).multiply(prevScaleY, mc), mc);
-        }
-
-        BigDecimal[] pxCx = new BigDecimal[width];
-        BigDecimal[] pxCy = new BigDecimal[height];
-        for (int col = 0; col < width; col++) {
-            pxCx[col] = adjMinReal.add(vp.scaleX.multiply(BigDecimal.valueOf(col), mc), mc);
-        }
-        for (int row = 0; row < height; row++) {
-            pxCy[row] = adjMinImag.add(vp.scaleY.multiply(BigDecimal.valueOf(row), mc), mc);
-        }
-
-        double dScaleX = vp.scaleX.doubleValue();
-        double dScaleY = vp.scaleY.doubleValue();
-        double cacheTolerance = Math.min(dScaleX, dScaleY) * 0.1;
-        boolean cacheUsable = width > 1 && height > 1
-            && pxCx[0].doubleValue() != pxCx[1].doubleValue()
-            && pxCy[0].doubleValue() != pxCy[1].doubleValue();
-        if (!cacheUsable) {
-            cache.clear();
-        }
-        cache.resetStats();
-
-        // Previous-render cache: map new pixels to old pixels via BigDecimal coordinates.
-        prevRenderCacheHits = buildPrevRenderMapping(
-            pxCx, pxCy, width, height, vp.scaleX, vp.scaleY, mc,
-            iters, rgb, cacheHit, mapper);
+        BigDecimalRenderContext ctx = setupBigDecimalRender(width, height, gradient, rangeReal, rangeImag);
+        int[] iters = ctx.iters;
+        boolean[] cacheHit = ctx.cacheHit;
+        FractalColorMapper mapper = ctx.mapper;
+        MathContext mc = ctx.mc;
+        BigDecimal[] pixelCx = ctx.pixelCx;
+        BigDecimal[] pixelCy = ctx.pixelCy;
+        double cacheTolerance = ctx.cacheTolerance;
+        boolean cacheUsable = ctx.cacheUsable;
+        int[] rgb = ctx.rgb;
 
         int nThreads = Runtime.getRuntime().availableProcessors();
         ExecutorService pool = Executors.newFixedThreadPool(nThreads);
@@ -795,8 +825,8 @@ public class FractalRenderer {
 
                     // Check double-precision cache
                     if (cacheUsable) {
-                        double cx = pxCx[col].doubleValue();
-                        double cy = pxCy[r].doubleValue();
+                        double cx = pixelCx[col].doubleValue();
+                        double cy = pixelCy[r].doubleValue();
                         int cached = cache.lookup(cx, cy, cacheTolerance);
                         if (cached != IterationQuadTree.CACHE_MISS) {
                             cacheHit[idx] = true;
@@ -806,7 +836,7 @@ public class FractalRenderer {
                         }
                     }
 
-                    int iter = type.iterateBig(pxCx[col], pxCy[r], maxIterations, mc);
+                    int iter = type.iterateBig(pixelCx[col], pixelCy[r], maxIterations, mc);
                     iters[idx] = iter;
                     rgb[idx] = mapper.colorForIter(iter);
                 }
@@ -814,54 +844,9 @@ public class FractalRenderer {
             });
         }
 
-        pool.shutdown();
-        try {
-            while (!pool.isTerminated()) {
-                pool.awaitTermination(100, TimeUnit.MILLISECONDS);
-                if (renderCancelled) {
-                    pool.shutdownNow();
-                    break;
-                }
-            }
-        } catch (InterruptedException e) {
-            renderCancelled = true;
-            pool.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        awaitPool(pool);
 
-        // Insert newly computed pixels into cache (sequential — cache is not thread-safe for writes)
-        if (!renderCancelled && cacheUsable) {
-            for (int i = 0; i < width * height; i++) {
-                if (!cacheHit[i]) {
-                    double cx = pxCx[i % width].doubleValue();
-                    double cy = pxCy[i / width].doubleValue();
-                    cache.insert(cx, cy, iters[i]);
-                }
-            }
-
-            double viewW = rangeReal.abs().doubleValue();
-            double viewH = rangeImag.abs().doubleValue();
-            cache.pruneOutside(
-                minReal.doubleValue() - viewW, maxReal.doubleValue() + viewW,
-                minImag.doubleValue() - viewH, maxImag.doubleValue() + viewH
-            );
-        }
-
-        // Save current render for next render's prev-render cache
-        if (!renderCancelled) {
-            prevPixelCx = pxCx;
-            prevPixelCy = pxCy;
-            prevIters = iters.clone();
-            prevWidth = width;
-            prevHeight = height;
-            prevScaleX = vp.scaleX;
-            prevScaleY = vp.scaleY;
-        }
-
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        image.setRGB(0, 0, width, height, rgb, 0, width);
-        progressiveRgb = null;
-        return image;
+        return finalizeBigDecimalRender(ctx, null);
     }
 
 }
