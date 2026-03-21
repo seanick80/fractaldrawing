@@ -20,7 +20,9 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 - **Auto-switching**: Renders in double precision at shallow zoom (fast), automatically switches to perturbation + BigDecimal past ~10^13 zoom
 - **Render modes**: AUTO (default), DOUBLE, BIGDECIMAL, PERTURBATION — selectable for benchmarking
 - **Color modes**: Mod (cyclic) for consistent color detail at all zoom levels, or Division (linear) for smooth gradients
+- **Image zoom**: Scroll wheel zooms the rendered image (0.25x–32x) centered on cursor for pixel-level inspection without re-rendering. View resets on next fractal render
 - **Click and drag panning**: Drag to pan the viewport — the raster image shifts with the cursor for instant visual feedback, then re-renders on release
+- **Fractal zoom**: Ctrl+scroll zooms in/out of the fractal (changes complex-plane viewport and triggers re-render). Left/right click also zooms in/out centered on click position
 - **Cross-render cache**: Double-precision quadtree cache for moderate zoom; BigDecimal pixel-mapping cache for deep zoom. On zoom, viewport origin snapping aligns pixel grids for 25% reuse; on pan, 75%+ reuse. Iteration results from the previous render are mapped to new pixel positions via O(width+height) BigDecimal divisions.
 - **Custom color gradients**: Full gradient editor with save/load support. Double-click a stop marker in the preview bar to open a color chooser — R/G/B control points auto-update to match.
 - **Palette-to-gradient**: Click any color in the palette while the fractal tool is active to instantly generate a gradient favoring that color with triadic complementary hues
@@ -122,7 +124,7 @@ src/com/seanick80/drawingapp/
 │   ├── FractalJsonUtil.java    # Shared JSON parsing
 │   ├── FractalBenchmark.java   # CLI performance benchmark
 │   ├── PerturbationEval.java   # CLI perturbation correctness evaluation
-│   └── FractalRenderTest.java  # 104-assertion regression test suite
+│   └── FractalRenderTest.java  # 114-assertion regression test suite
 └── tools/
     ├── Tool.java            # Tool interface
     ├── FractalTool.java     # Fractal UI: zoom, pan, save/load, async render

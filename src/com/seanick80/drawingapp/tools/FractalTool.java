@@ -345,7 +345,8 @@ public class FractalTool implements Tool {
                 try {
                     BufferedImage fractalImage = get();
                     if (fractalImage != null) {
-                        canvas.setPanOffset(0, 0); // Clear pan offset before painting new image
+                        canvas.setPanOffset(0, 0);
+                        canvas.resetViewZoom();
                         Graphics2D g = image.createGraphics();
                         g.drawImage(fractalImage, 0, 0, null);
                         g.dispose();
@@ -683,8 +684,9 @@ public class FractalTool implements Tool {
         }
         if (!dragging) return;
 
-        // Shift the raster image visually — no re-render until mouse up
-        canvas.setPanOffset(dx, dy);
+        // Shift the raster image visually (scale to screen pixels) — no re-render until mouse up
+        double vz = canvas.getViewZoom();
+        canvas.setPanOffset((int)(dx * vz), (int)(dy * vz));
     }
 
     @Override

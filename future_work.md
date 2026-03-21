@@ -34,6 +34,12 @@ When the fractal tool is active, clicking a color in the palette generates a 6-s
 ## ~~Random location explorer ("I Feel Lucky")~~ DONE (2026-03-21)
 Button in fractal tool settings panel. Samples random Mandelbrot locations (zoom 10^-2 to 10^-8), tests 8 points for varied iteration counts (≥4 distinct, mix of interior and escape), and navigates to the first interesting location found.
 
+## Poster mode (high-resolution export)
+Render the current fractal view at print-quality resolution (e.g., 4000×3000 or larger) with smooth linear (DIVISION) coloring, and export to a file suitable for printing as a wall poster.
+
+## ~~Image zoom~~ DONE (2026-03-21)
+Scroll wheel zooms the rendered image view (0.25x–32x) centered on cursor — no re-render. Ctrl+scroll does fractal zoom (changes the complex-plane viewport). View zoom resets automatically when a new fractal render completes. Mouse coordinates are transformed to image space so click-to-zoom and pan work correctly at any view zoom level.
+
 ## Features I’d like to explore when we have more time:
 ### Animations
 *   Iteration animation - add one iteration, display it, add another, etc - up to the point where not many iterations are present anymore. Save the resulting iteration slides as a video which can be played back.
