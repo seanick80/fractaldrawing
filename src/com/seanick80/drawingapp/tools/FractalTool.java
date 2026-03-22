@@ -41,6 +41,7 @@ public class FractalTool implements Tool {
     private long renderStartTime;
     private JComboBox<String> typeCombo;
     private JSpinner iterSpinner;
+    private JButton renderBtn;
     private File lastDirectory;
     private BufferedImage lastImage;
     private DrawingCanvas lastCanvas;
@@ -173,12 +174,18 @@ public class FractalTool implements Tool {
         panel.add(loadBtn);
         panel.add(Box.createVerticalStrut(8));
 
-        JButton renderBtn = new JButton("Render");
+        renderBtn = new JButton("Render");
         renderBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
         renderBtn.setMaximumSize(new Dimension(120, 28));
         renderBtn.setFont(renderBtn.getFont().deriveFont(10f));
         renderBtn.addActionListener(e -> {
-            if (lastImage != null && lastCanvas != null) {
+            if (isRendering()) {
+                renderer.cancelRender();
+                currentWorker.cancel(true);
+                stopProgressTimer();
+                setRenderButtonIdle();
+                if (progressLabel != null) progressLabel.setText("Cancelled");
+            } else if (lastImage != null && lastCanvas != null) {
                 renderAsync(lastImage, lastCanvas);
             }
         });
@@ -313,6 +320,24 @@ public class FractalTool implements Tool {
         renderAsync(image, canvas);
     }
 
+    private boolean isRendering() {
+        return currentWorker != null && !currentWorker.isDone();
+    }
+
+    private void setRenderButtonActive() {
+        if (renderBtn != null) {
+            renderBtn.setText("Cancel Render");
+            renderBtn.setForeground(new Color(200, 40, 40));
+        }
+    }
+
+    private void setRenderButtonIdle() {
+        if (renderBtn != null) {
+            renderBtn.setText("Render");
+            renderBtn.setForeground(null);
+        }
+    }
+
     private void renderAsync(BufferedImage image, DrawingCanvas canvas) {
         // Always cancel any in-progress render before starting a new one
         if (currentWorker != null && !currentWorker.isDone()) {
@@ -325,6 +350,7 @@ public class FractalTool implements Tool {
         int w = image.getWidth();
         int h = image.getHeight();
         if (progressLabel != null) progressLabel.setText("Rendering...");
+        setRenderButtonActive();
 
         // Start progress polling timer (200ms interval)
         startProgressTimer(w, h);
@@ -338,6 +364,7 @@ public class FractalTool implements Tool {
             @Override
             protected void done() {
                 stopProgressTimer();
+                setRenderButtonIdle();
                 if (isCancelled()) {
                     if (progressLabel != null) progressLabel.setText("Cancelled");
                     return;
