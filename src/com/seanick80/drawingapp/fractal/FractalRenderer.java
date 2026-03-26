@@ -39,6 +39,8 @@ public class FractalRenderer {
     private IterationQuadTree cache = new IterationQuadTree(-4, 4, -4, 4);
     private boolean lastRenderWasBigDecimal = false;
     private boolean interiorPruning = true;
+    private boolean pixelGuessing = true;
+    private static final int GUESS_BLOCK_SIZE = 8;
 
     private final ReentrantLock renderLock = new ReentrantLock();
 
@@ -202,6 +204,9 @@ public class FractalRenderer {
 
     public boolean isInteriorPruning() { return interiorPruning; }
     public void setInteriorPruning(boolean enabled) { this.interiorPruning = enabled; }
+
+    public boolean isPixelGuessing() { return pixelGuessing; }
+    public void setPixelGuessing(boolean enabled) { this.pixelGuessing = enabled; }
 
     public boolean needsBigDecimal() {
         BigDecimal rangeReal = maxReal.subtract(minReal);
@@ -528,6 +533,12 @@ public class FractalRenderer {
         return image;
     }
 
+    private int computeOrCache(double cx, double cy, double tolerance) {
+        int iter = cache.lookup(cx, cy, tolerance);
+        if (iter != IterationQuadTree.CACHE_MISS) return iter;
+        return type.iterate(cx, cy, maxIterations);
+    }
+
     private BufferedImage renderDouble(int width, int height, ColorGradient gradient) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         ensureBuffers(width, height);
@@ -535,6 +546,8 @@ public class FractalRenderer {
         int[] iters = renderIters;
         boolean[] cacheHit = renderCacheHit;
         java.util.Arrays.fill(cacheHit, false);
+        progressiveRgb = rgb;
+        renderCancelled = false;
 
         FractalColorMapper mapper = buildColorMapper(gradient);
         ViewportCalculator.DoubleViewport vp = ViewportCalculator.computeDouble(
@@ -542,24 +555,11 @@ public class FractalRenderer {
 
         cache.resetStats();
 
-        IntStream.range(0, height).parallel().forEach(row -> {
-            double cy = vp.minImag + row * vp.scaleY;
-            for (int col = 0; col < width; col++) {
-                double cx = vp.minReal + col * vp.scaleX;
-                int idx = row * width + col;
-
-                int iter = cache.lookup(cx, cy, vp.tolerance);
-                if (iter != IterationQuadTree.CACHE_MISS) {
-                    cacheHit[idx] = true;
-                    iters[idx] = iter;
-                } else {
-                    iter = type.iterate(cx, cy, maxIterations);
-                    iters[idx] = iter;
-                }
-
-                rgb[idx] = mapper.colorForIter(iters[idx]);
-            }
-        });
+        if (pixelGuessing) {
+            renderDoubleWithGuessing(width, height, vp, iters, rgb, cacheHit, mapper);
+        } else {
+            renderDoubleNoGuessing(width, height, vp, iters, rgb, cacheHit, mapper);
+        }
 
         for (int row = 0; row < height; row++) {
             double cy = vp.minImag + row * vp.scaleY;
@@ -578,7 +578,120 @@ public class FractalRenderer {
         );
 
         image.setRGB(0, 0, width, height, rgb, 0, width);
+        progressiveRgb = null;
         return image;
+    }
+
+    private void renderDoubleNoGuessing(int width, int height,
+                                         ViewportCalculator.DoubleViewport vp,
+                                         int[] iters, int[] rgb, boolean[] cacheHit,
+                                         FractalColorMapper mapper) {
+        IntStream.range(0, height).parallel().forEach(row -> {
+            double cy = vp.minImag + row * vp.scaleY;
+            for (int col = 0; col < width; col++) {
+                double cx = vp.minReal + col * vp.scaleX;
+                int idx = row * width + col;
+
+                int iter = cache.lookup(cx, cy, vp.tolerance);
+                if (iter != IterationQuadTree.CACHE_MISS) {
+                    cacheHit[idx] = true;
+                    iters[idx] = iter;
+                } else {
+                    iter = type.iterate(cx, cy, maxIterations);
+                    iters[idx] = iter;
+                }
+
+                rgb[idx] = mapper.colorForIter(iters[idx]);
+            }
+        });
+    }
+
+    /**
+     * Pixel guessing: compute grid pixels first, then fill uniform blocks.
+     * Step 1: Compute every GUESS_BLOCK_SIZE-th row and column.
+     * Step 2: For each block, if all 4 corners have the same iteration count,
+     *         fill the block interior without computing.
+     * Step 3: Compute remaining unfilled pixels.
+     */
+    private void renderDoubleWithGuessing(int width, int height,
+                                           ViewportCalculator.DoubleViewport vp,
+                                           int[] iters, int[] rgb, boolean[] cacheHit,
+                                           FractalColorMapper mapper) {
+        int step = GUESS_BLOCK_SIZE;
+        // Mark which pixels have been computed
+        boolean[] computed = new boolean[width * height];
+
+        // Step 1: Compute grid pixels (every step-th row and column, plus edges)
+        IntStream.range(0, height).parallel().forEach(row -> {
+            if (row % step != 0 && row != height - 1) return;
+            double cy = vp.minImag + row * vp.scaleY;
+            for (int col = 0; col < width; col++) {
+                if (col % step != 0 && col != width - 1) continue;
+                int idx = row * width + col;
+                double cx = vp.minReal + col * vp.scaleX;
+                int iter = cache.lookup(cx, cy, vp.tolerance);
+                if (iter != IterationQuadTree.CACHE_MISS) {
+                    cacheHit[idx] = true;
+                } else {
+                    iter = type.iterate(cx, cy, maxIterations);
+                }
+                iters[idx] = iter;
+                rgb[idx] = mapper.colorForIter(iter);
+                computed[idx] = true;
+            }
+        });
+
+        // Step 2: For each block, check corners. If uniform, fill the block.
+        int blocksX = (width - 1 + step - 1) / step;
+        int blocksY = (height - 1 + step - 1) / step;
+
+        IntStream.range(0, blocksY).parallel().forEach(by -> {
+            int y0 = by * step;
+            int y1 = Math.min(y0 + step, height - 1);
+            for (int bx = 0; bx < blocksX; bx++) {
+                int x0 = bx * step;
+                int x1 = Math.min(x0 + step, width - 1);
+
+                int tl = iters[y0 * width + x0];
+                int tr = iters[y0 * width + x1];
+                int bl = iters[y1 * width + x0];
+                int br = iters[y1 * width + x1];
+
+                if (tl == tr && tr == bl && bl == br) {
+                    int fillRgb = rgb[y0 * width + x0];
+                    for (int row = y0; row <= y1; row++) {
+                        for (int col = x0; col <= x1; col++) {
+                            int idx = row * width + col;
+                            if (!computed[idx]) {
+                                iters[idx] = tl;
+                                rgb[idx] = fillRgb;
+                                cacheHit[idx] = true;
+                                computed[idx] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Step 3: Compute remaining pixels (non-uniform block interiors)
+        IntStream.range(0, height).parallel().forEach(row -> {
+            if (renderCancelled) return;
+            double cy = vp.minImag + row * vp.scaleY;
+            for (int col = 0; col < width; col++) {
+                int idx = row * width + col;
+                if (computed[idx]) continue;
+                double cx = vp.minReal + col * vp.scaleX;
+                int iter = cache.lookup(cx, cy, vp.tolerance);
+                if (iter != IterationQuadTree.CACHE_MISS) {
+                    cacheHit[idx] = true;
+                } else {
+                    iter = type.iterate(cx, cy, maxIterations);
+                }
+                iters[idx] = iter;
+                rgb[idx] = mapper.colorForIter(iter);
+            }
+        });
     }
 
     private BufferedImage renderBigDecimal(int width, int height, ColorGradient gradient,
@@ -641,7 +754,91 @@ public class FractalRenderer {
             awaitPool(pool);
         }
 
-        // Phase 2: Perturbation iteration for non-interior pixels
+        // Phase 2: Perturbation iteration with optional pixel guessing
+        boolean[] computed = null;
+        if (pixelGuessing && !renderCancelled) {
+            computed = new boolean[width * height];
+            // Mark already-handled pixels
+            for (int i = 0; i < width * height; i++) {
+                computed[i] = interiorPixel[i] || cacheHit[i];
+            }
+
+            int step = GUESS_BLOCK_SIZE;
+            boolean[] comp = computed; // effectively final for lambdas
+
+            // Step 1: Compute grid pixels
+            pool = Executors.newFixedThreadPool(nThreads);
+            for (int row = 0; row < height; row++) {
+                if (row % step != 0 && row != height - 1) continue;
+                final int r = row;
+                pool.submit(() -> {
+                    if (renderCancelled) return;
+                    double dci = (r - halfH) * dScaleY;
+                    for (int col = 0; col < width; col++) {
+                        if (col % step != 0 && col != width - 1) continue;
+                        if (renderCancelled) return;
+                        int idx = r * width + col;
+                        if (comp[idx]) continue;
+
+                        if (cacheUsable) {
+                            double cx = pixelCx[col].doubleValue();
+                            double cy = pixelCy[r].doubleValue();
+                            int cached = cache.lookup(cx, cy, cacheTolerance);
+                            if (cached != IterationQuadTree.CACHE_MISS) {
+                                cacheHit[idx] = true;
+                                iters[idx] = cached;
+                                rgb[idx] = mapper.colorForIter(cached);
+                                comp[idx] = true;
+                                continue;
+                            }
+                        }
+
+                        double dcr = (col - halfW) * dScaleX;
+                        int iter = strategy.perturbIterate(refZr, refZi, dcr, dci, refEscapeIter, maxIterations);
+                        if (iter == PerturbationStrategy.GLITCH_DETECTED) {
+                            iter = type.iterateBig(pixelCx[col], pixelCy[r], maxIterations, mc);
+                        }
+                        iters[idx] = iter;
+                        rgb[idx] = mapper.colorForIter(iter);
+                        comp[idx] = true;
+                    }
+                });
+            }
+            awaitPool(pool);
+
+            // Step 2: Fill uniform blocks
+            int blocksX = (width - 1 + step - 1) / step;
+            int blocksY = (height - 1 + step - 1) / step;
+            for (int by = 0; by < blocksY; by++) {
+                int y0 = by * step;
+                int y1 = Math.min(y0 + step, height - 1);
+                for (int bx = 0; bx < blocksX; bx++) {
+                    int x0 = bx * step;
+                    int x1 = Math.min(x0 + step, width - 1);
+                    int tl = iters[y0 * width + x0];
+                    int tr = iters[y0 * width + x1];
+                    int bl = iters[y1 * width + x0];
+                    int br = iters[y1 * width + x1];
+                    if (tl == tr && tr == bl && bl == br) {
+                        int fillRgb = rgb[y0 * width + x0];
+                        for (int row = y0; row <= y1; row++) {
+                            for (int col = x0; col <= x1; col++) {
+                                int idx = row * width + col;
+                                if (!comp[idx]) {
+                                    iters[idx] = tl;
+                                    rgb[idx] = fillRgb;
+                                    cacheHit[idx] = true;
+                                    comp[idx] = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Phase 3: Compute remaining pixels
+        boolean[] finalComputed = computed;
         pool = Executors.newFixedThreadPool(nThreads);
 
         for (int row = 0; row < height; row++) {
@@ -652,15 +849,11 @@ public class FractalRenderer {
                 for (int col = 0; col < width; col++) {
                     if (renderCancelled) return;
                     int idx = r * width + col;
-                    if (interiorPixel[idx]) {
-                        continue; // Already filled with black by pruning
-                    }
-                    if (cacheHit[idx]) {
-                        continue; // Already filled from previous render cache
-                    }
+                    if (interiorPixel[idx]) continue;
+                    if (cacheHit[idx]) continue;
+                    if (finalComputed != null && finalComputed[idx]) continue;
                     double dcr = (col - halfW) * dScaleX;
 
-                    // Check double-precision cache (coordinates in complex plane)
                     if (cacheUsable) {
                         double cx = pixelCx[col].doubleValue();
                         double cy = pixelCy[r].doubleValue();
@@ -676,7 +869,6 @@ public class FractalRenderer {
                     int iter = strategy.perturbIterate(refZr, refZi, dcr, dci, refEscapeIter, maxIterations);
 
                     if (iter == PerturbationStrategy.GLITCH_DETECTED) {
-                        // Fallback to full BigDecimal for this pixel
                         iter = type.iterateBig(pixelCx[col], pixelCy[r], maxIterations, mc);
                     }
 

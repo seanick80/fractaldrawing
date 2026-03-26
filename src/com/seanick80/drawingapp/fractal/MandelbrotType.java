@@ -31,7 +31,11 @@ public final class MandelbrotType implements FractalType {
             BigDecimal zr2 = zr.multiply(zr, mc);
             BigDecimal zi2 = zi.multiply(zi, mc);
             if (zr2.add(zi2, mc).compareTo(FOUR) > 0) return i;
-            zi = TWO.multiply(zr, mc).multiply(zi, mc).add(cy, mc);
+            // Algebraic squaring trick: zr*zi = ((zr+zi)^2 - zr^2 - zi^2) / 2
+            // Replaces one general multiply with one squaring (cheaper at high precision)
+            BigDecimal sum = zr.add(zi, mc);
+            BigDecimal sum2 = sum.multiply(sum, mc);
+            zi = sum2.subtract(zr2, mc).subtract(zi2, mc).add(cy, mc);
             zr = zr2.subtract(zi2, mc).add(cx, mc);
         }
         return maxIter;

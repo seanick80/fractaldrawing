@@ -4,6 +4,7 @@ import com.seanick80.drawingapp.gradient.ColorGradient;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.File;
 import java.math.BigDecimal;
 
 /**
@@ -72,6 +73,14 @@ public class FractalRenderTest {
         testMagnetRendersValidImage();
         testNewTypesInAllRenderModes();
         testTypeSelectionRoundTrip();
+
+        // Pixel guessing tests
+        testPixelGuessingNearIdentical();
+        testPixelGuessingOnOffToggle();
+
+        // Zoom animation tests
+        testZoomAnimatorInterpolation();
+        testZoomAnimatorRenderFrames();
 
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
@@ -358,6 +367,7 @@ public class FractalRenderTest {
     private static void testMandelbrotPerturbationGolden() {
         FractalRenderer r = newDeepZoomRenderer();
         r.setRenderMode(FractalRenderer.RenderMode.PERTURBATION);
+        r.setPixelGuessing(false); // golden tests require exact output
         r.getCache().clear();
         BufferedImage img = r.render(SIZE, SIZE, gradient());
         long checksum = pixelChecksum(img);
@@ -1319,6 +1329,139 @@ public class FractalRenderTest {
         int r1 = (rgb1 >> 16) & 0xFF, g1 = (rgb1 >> 8) & 0xFF, b1 = rgb1 & 0xFF;
         int r2 = (rgb2 >> 16) & 0xFF, g2 = (rgb2 >> 8) & 0xFF, b2 = rgb2 & 0xFF;
         return Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2);
+    }
+
+    // --- Zoom Animation Tests ---
+
+    private static void testZoomAnimatorInterpolation() {
+        System.out.println("\n  -- Zoom Animation --");
+        ZoomAnimator.Keyframe from = new ZoomAnimator.Keyframe(0.0, 0.0, 1.0, 100);
+        ZoomAnimator.Keyframe to = new ZoomAnimator.Keyframe(-0.5, 0.5, 100.0, 500);
+
+        // t=0 should be the start keyframe
+        ZoomAnimator.Keyframe k0 = ZoomAnimator.interpolate(from, to, 0.0);
+        check("interpolate t=0 centerR ~ 0.0",
+                Math.abs(k0.centerReal.doubleValue()) < 0.001);
+        check("interpolate t=0 zoom ~ 1.0",
+                Math.abs(k0.zoomLevel.doubleValue() - 1.0) < 0.01);
+        check("interpolate t=0 maxIter=100", k0.maxIterations == 100);
+
+        // t=1 should be the end keyframe
+        ZoomAnimator.Keyframe k1 = ZoomAnimator.interpolate(from, to, 1.0);
+        check("interpolate t=1 centerR ~ -0.5",
+                Math.abs(k1.centerReal.doubleValue() - (-0.5)) < 0.001);
+        check("interpolate t=1 zoom ~ 100.0",
+                Math.abs(k1.zoomLevel.doubleValue() - 100.0) < 0.5);
+        check("interpolate t=1 maxIter=500", k1.maxIterations == 500);
+
+        // t=0.5 should be midpoint (exponential zoom: sqrt(1*100)=10)
+        ZoomAnimator.Keyframe kMid = ZoomAnimator.interpolate(from, to, 0.5);
+        check("interpolate t=0.5 zoom ~ 10.0 (exponential)",
+                Math.abs(kMid.zoomLevel.doubleValue() - 10.0) < 0.5);
+        check("interpolate t=0.5 centerR ~ -0.25",
+                Math.abs(kMid.centerReal.doubleValue() - (-0.25)) < 0.001);
+    }
+
+    private static void testZoomAnimatorRenderFrames() {
+        FractalRenderer r = newRenderer();
+        r.setBounds(-2.0, 2.0, -2.0, 2.0);
+        ZoomAnimator animator = new ZoomAnimator(r, gradient());
+        animator.setSize(50, 50);
+        animator.setFramesPerSegment(3);
+
+        animator.addKeyframe(new ZoomAnimator.Keyframe(0.0, 0.0, 1.0, 100));
+        animator.addKeyframe(new ZoomAnimator.Keyframe(-0.5, 0.0, 10.0, 200));
+
+        check("total frames = 4 (3 per segment + 1)", animator.getTotalFrames() == 4);
+
+        // Render to temp directory
+        File tempDir = new File(System.getProperty("java.io.tmpdir"), "fractal_anim_test_" + System.currentTimeMillis());
+        try {
+            int[] frameCount = {0};
+            int rendered = animator.renderToFiles(tempDir, (idx, total, ms) -> frameCount[0]++);
+            check("rendered 4 frames", rendered == 4);
+            check("callback called 4 times", frameCount[0] == 4);
+
+            // Verify files exist
+            boolean allExist = true;
+            for (int i = 0; i < 4; i++) {
+                File f = new File(tempDir, String.format("frame_%04d.png", i));
+                if (!f.exists()) { allExist = false; break; }
+            }
+            check("all frame files created", allExist);
+        } catch (Exception e) {
+            check("zoom animation render failed: " + e.getMessage(), false);
+        } finally {
+            // Cleanup
+            if (tempDir.exists()) {
+                File[] files = tempDir.listFiles();
+                if (files != null) for (File f : files) f.delete();
+                tempDir.delete();
+            }
+        }
+    }
+
+    // --- Pixel Guessing Tests ---
+
+    private static void testPixelGuessingNearIdentical() {
+        System.out.println("\n  -- Pixel Guessing --");
+        // Double path: guessing ON vs OFF should produce nearly identical images
+        FractalRenderer r = newRenderer();
+        r.setBounds(-2.0, 1.0, -1.5, 1.5);
+        r.setMaxIterations(256);
+
+        r.setPixelGuessing(false);
+        r.getCache().clear();
+        BufferedImage exact = r.render(200, 200, gradient());
+
+        r.setPixelGuessing(true);
+        r.getCache().clear();
+        BufferedImage guessed = r.render(200, 200, gradient());
+
+        int[] pe = getPixels(exact);
+        int[] pg = getPixels(guessed);
+        int diffCount = 0;
+        for (int i = 0; i < pe.length; i++) {
+            if (pe[i] != pg[i]) diffCount++;
+        }
+        double diffPct = 100.0 * diffCount / pe.length;
+        System.out.printf("  INFO: pixel guessing diff vs exact: %d/%d (%.1f%%)%n",
+                diffCount, pe.length, diffPct);
+        // Guessing should be very close — at most 5% different pixels (boundary artifacts)
+        check("pixel guessing <5% diff from exact (got " +
+              String.format("%.1f%%", diffPct) + ")", diffPct < 5.0);
+
+        // Both should produce rich images
+        int colorsExact = countUniqueColors(exact);
+        int colorsGuessed = countUniqueColors(guessed);
+        check("pixel guessing produces rich image (exact=" + colorsExact +
+              ", guessed=" + colorsGuessed + ")", colorsGuessed >= colorsExact - 5);
+    }
+
+    private static void testPixelGuessingOnOffToggle() {
+        // Perturbation path: guessing ON vs OFF at deep zoom
+        FractalRenderer r = newDeepZoomRenderer();
+        r.setRenderMode(FractalRenderer.RenderMode.PERTURBATION);
+
+        r.setPixelGuessing(false);
+        r.getCache().clear();
+        BufferedImage exact = r.render(SIZE, SIZE, gradient());
+
+        r.setPixelGuessing(true);
+        r.getCache().clear();
+        BufferedImage guessed = r.render(SIZE, SIZE, gradient());
+
+        int[] pe = getPixels(exact);
+        int[] pg = getPixels(guessed);
+        int diffCount = 0;
+        for (int i = 0; i < pe.length; i++) {
+            if (pe[i] != pg[i]) diffCount++;
+        }
+        double diffPct = 100.0 * diffCount / pe.length;
+        System.out.printf("  INFO: perturbation guessing diff vs exact: %d/%d (%.1f%%)%n",
+                diffCount, pe.length, diffPct);
+        check("perturbation guessing <5% diff from exact (got " +
+              String.format("%.1f%%", diffPct) + ")", diffPct < 5.0);
     }
 
     private static void check(String name, boolean condition) {

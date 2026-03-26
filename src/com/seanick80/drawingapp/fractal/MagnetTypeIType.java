@@ -65,9 +65,11 @@ public final class MagnetTypeIType implements FractalType {
             BigDecimal dr = zr.subtract(BigDecimal.ONE, mc);
             if (dr.multiply(dr, mc).add(zi2, mc).compareTo(BD_EPSILON) < 0) return maxIter;
 
-            // Numerator: z^2 + c - 1
+            // Numerator: z^2 + c - 1, using squaring trick for 2*zr*zi
             BigDecimal nr = zr2.subtract(zi2, mc).add(cx, mc).subtract(BigDecimal.ONE, mc);
-            BigDecimal ni = BD_TWO.multiply(zr, mc).multiply(zi, mc).add(cy, mc);
+            BigDecimal zSum = zr.add(zi, mc);
+            BigDecimal zSum2 = zSum.multiply(zSum, mc);
+            BigDecimal ni = zSum2.subtract(zr2, mc).subtract(zi2, mc).add(cy, mc);
 
             // Denominator: 2z + c - 2
             BigDecimal ddr = BD_TWO.multiply(zr, mc).add(cx, mc).subtract(BD_TWO, mc);
@@ -83,9 +85,13 @@ public final class MagnetTypeIType implements FractalType {
             BigDecimal qi = ni.multiply(ddr, mc).subtract(nr.multiply(ddi, mc), mc)
                               .divide(denomSq, mc);
 
-            // Square: (n/d)^2
-            zr = qr.multiply(qr, mc).subtract(qi.multiply(qi, mc), mc);
-            zi = BD_TWO.multiply(qr, mc).multiply(qi, mc);
+            // Square: (n/d)^2, using squaring trick for 2*qr*qi
+            BigDecimal qr2 = qr.multiply(qr, mc);
+            BigDecimal qi2 = qi.multiply(qi, mc);
+            BigDecimal qSum = qr.add(qi, mc);
+            BigDecimal qSum2 = qSum.multiply(qSum, mc);
+            zr = qr2.subtract(qi2, mc);
+            zi = qSum2.subtract(qr2, mc).subtract(qi2, mc);
         }
         return maxIter;
     }

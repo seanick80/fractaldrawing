@@ -6,6 +6,7 @@ import com.seanick80.drawingapp.fractal.FractalRenderer;
 import com.seanick80.drawingapp.fractal.FractalType;
 import com.seanick80.drawingapp.fractal.JuliaType;
 import com.seanick80.drawingapp.fractal.FractalTypeRegistry;
+import com.seanick80.drawingapp.fractal.ZoomAnimator;
 import com.seanick80.drawingapp.gradient.ColorGradient;
 import com.seanick80.drawingapp.gradient.GradientEditorDialog;
 
@@ -198,6 +199,14 @@ public class FractalTool implements Tool {
         luckyBtn.setFont(luckyBtn.getFont().deriveFont(10f));
         luckyBtn.addActionListener(e -> feelLucky());
         panel.add(luckyBtn);
+        panel.add(Box.createVerticalStrut(4));
+
+        JButton zoomAnimBtn = new JButton("Zoom Movie...");
+        zoomAnimBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        zoomAnimBtn.setMaximumSize(new Dimension(120, 28));
+        zoomAnimBtn.setFont(zoomAnimBtn.getFont().deriveFont(10f));
+        zoomAnimBtn.addActionListener(e -> startZoomAnimation(panel));
+        panel.add(zoomAnimBtn);
         panel.add(Box.createVerticalStrut(12));
 
         // Zoom / position info
@@ -393,8 +402,18 @@ public class FractalTool implements Tool {
     private void startProgressTimer(int width, int height) {
         progressTimer = new javax.swing.Timer(200, e -> {
             if (progressLabel == null) return;
-            double progress = renderer.getBigDecimalProgress();
             long elapsed = System.currentTimeMillis() - renderStartTime;
+
+            // Blit progressive RGB data to canvas for real-time feedback
+            int[] progRgb = renderer.getProgressiveRgb();
+            if (progRgb != null && lastImage != null && lastCanvas != null) {
+                try {
+                    lastImage.setRGB(0, 0, width, height, progRgb, 0, width);
+                    lastCanvas.repaint();
+                } catch (Exception ignored) {}
+            }
+
+            double progress = renderer.getBigDecimalProgress();
             if (progress > 0 && progress < 1.0) {
                 int pct = (int) (progress * 100);
                 int completedRows = (int) (progress * height);
@@ -587,6 +606,113 @@ public class FractalTool implements Tool {
             }
         }
         return null; // unlikely
+    }
+
+    // --- Zoom Animation ---
+
+    private void startZoomAnimation(Component parent) {
+        Window window = SwingUtilities.getWindowAncestor(parent);
+
+        // Current viewport is the start keyframe (zoom=1 for default, calculated from bounds)
+        BigDecimal rangeR = renderer.getMaxRealBig().subtract(renderer.getMinRealBig());
+        BigDecimal rangeI = renderer.getMaxImagBig().subtract(renderer.getMinImagBig());
+        double currentRange = Math.min(rangeR.doubleValue(), rangeI.doubleValue());
+        double currentZoom = INITIAL_RANGE / currentRange;
+        MathContext mc = getZoomMathContext(renderer.getMinRealBig(), renderer.getMaxRealBig(),
+                                            renderer.getMinImagBig(), renderer.getMaxImagBig());
+        BigDecimal two = new BigDecimal(2);
+        BigDecimal centerR = renderer.getMinRealBig().add(renderer.getMaxRealBig(), mc).divide(two, mc);
+        BigDecimal centerI = renderer.getMinImagBig().add(renderer.getMaxImagBig(), mc).divide(two, mc);
+
+        // Dialog to configure the zoom animation
+        JTextField framesField = new JTextField("60", 5);
+        JTextField zoomFactorField = new JTextField("100", 5);
+        JTextField widthField = new JTextField(lastImage != null ? String.valueOf(lastImage.getWidth()) : "640", 5);
+        JTextField heightField = new JTextField(lastImage != null ? String.valueOf(lastImage.getHeight()) : "480", 5);
+
+        JPanel inputPanel = new JPanel(new java.awt.GridLayout(4, 2, 4, 4));
+        inputPanel.add(new JLabel("Total frames:"));
+        inputPanel.add(framesField);
+        inputPanel.add(new JLabel("Zoom factor:"));
+        inputPanel.add(zoomFactorField);
+        inputPanel.add(new JLabel("Frame width:"));
+        inputPanel.add(widthField);
+        inputPanel.add(new JLabel("Frame height:"));
+        inputPanel.add(heightField);
+
+        int result = JOptionPane.showConfirmDialog(window, inputPanel,
+                "Zoom Animation", JOptionPane.OK_CANCEL_OPTION);
+        if (result != JOptionPane.OK_OPTION) return;
+
+        int totalFrames;
+        double zoomFactor;
+        int frameW, frameH;
+        try {
+            totalFrames = Integer.parseInt(framesField.getText().trim());
+            zoomFactor = Double.parseDouble(zoomFactorField.getText().trim());
+            frameW = Integer.parseInt(widthField.getText().trim());
+            frameH = Integer.parseInt(heightField.getText().trim());
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(window, "Invalid number format", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        JFileChooser fc = new JFileChooser(lastDirectory != null ? lastDirectory : new File("."));
+        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        fc.setDialogTitle("Select output directory for frames");
+        if (fc.showSaveDialog(window) != JFileChooser.APPROVE_OPTION) return;
+        File outputDir = fc.getSelectedFile();
+        lastDirectory = outputDir;
+
+        // Build keyframes: current view → zoomed-in view
+        double endZoom = currentZoom * zoomFactor;
+        FractalRenderer animRenderer = new FractalRenderer();
+        animRenderer.setType(renderer.getType());
+        animRenderer.setRenderMode(FractalRenderer.RenderMode.AUTO);
+
+        ZoomAnimator animator = new ZoomAnimator(animRenderer, gradient);
+        animator.setSize(frameW, frameH);
+        animator.setFramesPerSegment(totalFrames - 1);
+        animator.addKeyframe(new ZoomAnimator.Keyframe(centerR, centerI,
+                new BigDecimal(Double.toString(currentZoom)), renderer.getMaxIterations()));
+        animator.addKeyframe(new ZoomAnimator.Keyframe(centerR, centerI,
+                new BigDecimal(Double.toString(endZoom)), renderer.getMaxIterations()));
+
+        // Run in background
+        if (progressLabel != null) progressLabel.setText("Rendering animation...");
+
+        new SwingWorker<Integer, String>() {
+            @Override
+            protected Integer doInBackground() throws Exception {
+                return animator.renderToFiles(outputDir, (frame, total, ms) -> {
+                    publish(String.format("Frame %d/%d (%dms)", frame + 1, total, ms));
+                });
+            }
+
+            @Override
+            protected void process(java.util.List<String> chunks) {
+                if (progressLabel != null && !chunks.isEmpty()) {
+                    progressLabel.setText(chunks.get(chunks.size() - 1));
+                }
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    int count = get();
+                    if (progressLabel != null) {
+                        progressLabel.setText("Animation: " + count + " frames saved");
+                    }
+                    JOptionPane.showMessageDialog(window,
+                            count + " frames saved to:\n" + outputDir.getAbsolutePath(),
+                            "Zoom Animation Complete", JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception e) {
+                    if (progressLabel != null) progressLabel.setText("Animation failed");
+                    JOptionPane.showMessageDialog(window,
+                            "Error: " + e.getMessage(), "Animation Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        }.execute();
     }
 
     // --- Save / Load location ---

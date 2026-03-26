@@ -13,10 +13,15 @@ public class FractalJsonUtil {
         json = json.trim();
         if (json.startsWith("{")) json = json.substring(1);
         if (json.endsWith("}")) json = json.substring(0, json.length() - 1);
-        for (String line : json.split("\n")) {
+        return parseJsonFragment(json);
+    }
+
+    /** Parse key-value pairs from a JSON fragment (no surrounding braces). */
+    public static Map<String, String> parseJsonFragment(String fragment) {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (String line : fragment.split("[,\n]")) {
             line = line.trim();
             if (line.isEmpty()) continue;
-            if (line.endsWith(",")) line = line.substring(0, line.length() - 1);
             int colonIdx = line.indexOf(':');
             if (colonIdx < 0) continue;
             String key = line.substring(0, colonIdx).trim();

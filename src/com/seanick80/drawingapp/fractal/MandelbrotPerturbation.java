@@ -42,7 +42,10 @@ public final class MandelbrotPerturbation implements PerturbationStrategy {
                 outZi[i + 1] = newDzi;
                 continue;
             }
-            BigDecimal newZi = TWO.multiply(zr, mc).multiply(zi, mc).add(ci, mc);
+            // Algebraic squaring trick: 2*zr*zi = (zr+zi)^2 - zr^2 - zi^2
+            BigDecimal sum = zr.add(zi, mc);
+            BigDecimal sum2 = sum.multiply(sum, mc);
+            BigDecimal newZi = sum2.subtract(zr2, mc).subtract(zi2, mc).add(ci, mc);
             zr = zr2.subtract(zi2, mc).add(cr, mc);
             zi = newZi;
         }
