@@ -607,26 +607,30 @@ public class FractalRenderer {
     }
 
     /**
-     * Pixel guessing: compute grid pixels first, then fill uniform blocks.
-     * Step 1: Compute every GUESS_BLOCK_SIZE-th row and column.
-     * Step 2: For each block, if all 4 corners have the same iteration count,
-     *         fill the block interior without computing.
-     * Step 3: Compute remaining unfilled pixels.
+     * Pixel guessing with boundary fill: compute all block boundary pixels,
+     * then fill blocks where the entire boundary is uniform.
+     * Step 1: Compute all pixels on block boundaries (every GUESS_BLOCK_SIZE-th
+     *         row and column).
+     * Step 2: For each block, if ALL boundary pixels have the same iteration count,
+     *         fill the interior. This catches thin filaments that 4-corner checks miss.
+     * Step 3: Compute remaining unfilled pixels (non-uniform block interiors).
      */
     private void renderDoubleWithGuessing(int width, int height,
                                            ViewportCalculator.DoubleViewport vp,
                                            int[] iters, int[] rgb, boolean[] cacheHit,
                                            FractalColorMapper mapper) {
         int step = GUESS_BLOCK_SIZE;
-        // Mark which pixels have been computed
         boolean[] computed = new boolean[width * height];
 
-        // Step 1: Compute grid pixels (every step-th row and column, plus edges)
+        // Step 1: Compute ALL pixels on block grid lines (every step-th row, every step-th col)
+        // This gives us the full boundary of every block.
         IntStream.range(0, height).parallel().forEach(row -> {
-            if (row % step != 0 && row != height - 1) return;
+            if (renderCancelled) return;
+            boolean isGridRow = (row % step == 0 || row == height - 1);
             double cy = vp.minImag + row * vp.scaleY;
             for (int col = 0; col < width; col++) {
-                if (col % step != 0 && col != width - 1) continue;
+                boolean isGridCol = (col % step == 0 || col == width - 1);
+                if (!isGridRow && !isGridCol) continue; // only compute boundary pixels
                 int idx = row * width + col;
                 double cx = vp.minReal + col * vp.scaleX;
                 int iter = cache.lookup(cx, cy, vp.tolerance);
@@ -641,7 +645,7 @@ public class FractalRenderer {
             }
         });
 
-        // Step 2: For each block, check corners. If uniform, fill the block.
+        // Step 2: For each block, check ALL boundary pixels. If uniform, fill interior.
         int blocksX = (width - 1 + step - 1) / step;
         int blocksY = (height - 1 + step - 1) / step;
 
@@ -651,23 +655,31 @@ public class FractalRenderer {
             for (int bx = 0; bx < blocksX; bx++) {
                 int x0 = bx * step;
                 int x1 = Math.min(x0 + step, width - 1);
+                if (x1 <= x0 || y1 <= y0) continue;
 
-                int tl = iters[y0 * width + x0];
-                int tr = iters[y0 * width + x1];
-                int bl = iters[y1 * width + x0];
-                int br = iters[y1 * width + x1];
+                int refIter = iters[y0 * width + x0];
+                boolean uniform = true;
 
-                if (tl == tr && tr == bl && bl == br) {
+                // Check top and bottom edges
+                for (int col = x0; col <= x1 && uniform; col++) {
+                    if (iters[y0 * width + col] != refIter) uniform = false;
+                    if (iters[y1 * width + col] != refIter) uniform = false;
+                }
+                // Check left and right edges (excluding corners)
+                for (int row = y0 + 1; row < y1 && uniform; row++) {
+                    if (iters[row * width + x0] != refIter) uniform = false;
+                    if (iters[row * width + x1] != refIter) uniform = false;
+                }
+
+                if (uniform) {
                     int fillRgb = rgb[y0 * width + x0];
-                    for (int row = y0; row <= y1; row++) {
-                        for (int col = x0; col <= x1; col++) {
+                    for (int row = y0 + 1; row < y1; row++) {
+                        for (int col = x0 + 1; col < x1; col++) {
                             int idx = row * width + col;
-                            if (!computed[idx]) {
-                                iters[idx] = tl;
-                                rgb[idx] = fillRgb;
-                                cacheHit[idx] = true;
-                                computed[idx] = true;
-                            }
+                            iters[idx] = refIter;
+                            rgb[idx] = fillRgb;
+                            cacheHit[idx] = true;
+                            computed[idx] = true;
                         }
                     }
                 }
@@ -766,16 +778,17 @@ public class FractalRenderer {
             int step = GUESS_BLOCK_SIZE;
             boolean[] comp = computed; // effectively final for lambdas
 
-            // Step 1: Compute grid pixels
+            // Step 1: Compute ALL pixels on block boundaries (grid rows + grid cols)
             pool = Executors.newFixedThreadPool(nThreads);
             for (int row = 0; row < height; row++) {
-                if (row % step != 0 && row != height - 1) continue;
                 final int r = row;
+                final boolean isGridRow = (r % step == 0 || r == height - 1);
                 pool.submit(() -> {
                     if (renderCancelled) return;
                     double dci = (r - halfH) * dScaleY;
                     for (int col = 0; col < width; col++) {
-                        if (col % step != 0 && col != width - 1) continue;
+                        boolean isGridCol = (col % step == 0 || col == width - 1);
+                        if (!isGridRow && !isGridCol) continue;
                         if (renderCancelled) return;
                         int idx = r * width + col;
                         if (comp[idx]) continue;
@@ -806,7 +819,7 @@ public class FractalRenderer {
             }
             awaitPool(pool);
 
-            // Step 2: Fill uniform blocks
+            // Step 2: Fill blocks where ALL boundary pixels are uniform
             int blocksX = (width - 1 + step - 1) / step;
             int blocksY = (height - 1 + step - 1) / step;
             for (int by = 0; by < blocksY; by++) {
@@ -815,17 +828,26 @@ public class FractalRenderer {
                 for (int bx = 0; bx < blocksX; bx++) {
                     int x0 = bx * step;
                     int x1 = Math.min(x0 + step, width - 1);
-                    int tl = iters[y0 * width + x0];
-                    int tr = iters[y0 * width + x1];
-                    int bl = iters[y1 * width + x0];
-                    int br = iters[y1 * width + x1];
-                    if (tl == tr && tr == bl && bl == br) {
+                    if (x1 <= x0 || y1 <= y0) continue;
+
+                    int refIter = iters[y0 * width + x0];
+                    boolean uniform = true;
+                    for (int col = x0; col <= x1 && uniform; col++) {
+                        if (iters[y0 * width + col] != refIter) uniform = false;
+                        if (iters[y1 * width + col] != refIter) uniform = false;
+                    }
+                    for (int row = y0 + 1; row < y1 && uniform; row++) {
+                        if (iters[row * width + x0] != refIter) uniform = false;
+                        if (iters[row * width + x1] != refIter) uniform = false;
+                    }
+
+                    if (uniform) {
                         int fillRgb = rgb[y0 * width + x0];
-                        for (int row = y0; row <= y1; row++) {
-                            for (int col = x0; col <= x1; col++) {
+                        for (int row = y0 + 1; row < y1; row++) {
+                            for (int col = x0 + 1; col < x1; col++) {
                                 int idx = row * width + col;
                                 if (!comp[idx]) {
-                                    iters[idx] = tl;
+                                    iters[idx] = refIter;
                                     rgb[idx] = fillRgb;
                                     cacheHit[idx] = true;
                                     comp[idx] = true;

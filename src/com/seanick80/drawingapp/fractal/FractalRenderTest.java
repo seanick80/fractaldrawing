@@ -77,6 +77,7 @@ public class FractalRenderTest {
         // Pixel guessing tests
         testPixelGuessingNearIdentical();
         testPixelGuessingOnOffToggle();
+        testPixelGuessingFilamentRegion();
 
         // Zoom animation tests
         testZoomAnimatorInterpolation();
@@ -1436,6 +1437,38 @@ public class FractalRenderTest {
         int colorsGuessed = countUniqueColors(guessed);
         check("pixel guessing produces rich image (exact=" + colorsExact +
               ", guessed=" + colorsGuessed + ")", colorsGuessed >= colorsExact - 5);
+    }
+
+    private static void testPixelGuessingFilamentRegion() {
+        // Regression test: filament-heavy region that caused corruption with 4-corner guessing
+        FractalRenderer r = newRenderer();
+        r.setBounds(
+            new BigDecimal("-1.158514308230042888196567"),
+            new BigDecimal("-1.158479463315670184097907"),
+            new BigDecimal("-0.2686450286351049685909021"),
+            new BigDecimal("-0.2686101837207322644922435")
+        );
+        r.setMaxIterations(256);
+
+        r.setPixelGuessing(false);
+        r.getCache().clear();
+        BufferedImage exact = r.render(200, 150, gradient());
+
+        r.setPixelGuessing(true);
+        r.getCache().clear();
+        BufferedImage guessed = r.render(200, 150, gradient());
+
+        int[] pe = getPixels(exact);
+        int[] pg = getPixels(guessed);
+        int diffCount = 0;
+        for (int i = 0; i < pe.length; i++) {
+            if (pe[i] != pg[i]) diffCount++;
+        }
+        double diffPct = 100.0 * diffCount / pe.length;
+        System.out.printf("  INFO: filament region guessing diff: %d/%d (%.1f%%)%n",
+                diffCount, pe.length, diffPct);
+        check("filament region guessing <1% diff (got " +
+              String.format("%.1f%%", diffPct) + ")", diffPct < 1.0);
     }
 
     private static void testPixelGuessingOnOffToggle() {
