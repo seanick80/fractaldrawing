@@ -46,6 +46,7 @@ public class FractalTool implements Tool {
     private JSpinner iterSpinner;
     private JButton renderBtn;
     private File lastDirectory;
+    private static File defaultLocationDir;
     private BufferedImage lastImage;
     private DrawingCanvas lastCanvas;
 
@@ -60,6 +61,16 @@ public class FractalTool implements Tool {
 
     public FractalTool() {
         gradient = ColorGradient.fractalDefault();
+    }
+
+    public static void setDefaultLocationDirectory(File dir) {
+        if (dir != null && dir.isDirectory()) {
+            defaultLocationDir = dir;
+        }
+    }
+
+    public static File getDefaultLocationDirectory() {
+        return defaultLocationDir;
     }
 
     @Override public String getName() { return "Fractal"; }
@@ -829,7 +840,14 @@ public class FractalTool implements Tool {
         if (fc.showOpenDialog(SwingUtilities.getWindowAncestor(parent)) != JFileChooser.APPROVE_OPTION) return;
         File file = fc.getSelectedFile();
         lastDirectory = file.getParentFile();
+        loadLocationFile(file);
+    }
 
+    /**
+     * Load a fractal location from a JSON file, update renderer state,
+     * and trigger a re-render if a canvas is available.
+     */
+    public void loadLocationFile(File file) {
         try {
             String json = Files.readString(file.toPath(), StandardCharsets.UTF_8);
             Map<String, String> data = parseJson(json);
@@ -863,18 +881,19 @@ public class FractalTool implements Tool {
 
             updateInfoLabels();
 
-            // Trigger a render immediately if we have a canvas
             if (lastImage != null && lastCanvas != null) {
                 renderAsync(lastImage, lastCanvas);
             }
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(parent),
-                "Error loading: " + ex.getMessage(), "Load Error", JOptionPane.ERROR_MESSAGE);
+            System.err.println("Error loading location: " + ex.getMessage());
         }
     }
 
     private JFileChooser createFileChooser() {
-        JFileChooser fc = new JFileChooser(lastDirectory != null ? lastDirectory : new File("."));
+        File dir = lastDirectory;
+        if (dir == null) dir = defaultLocationDir;
+        if (dir == null) dir = new File(".");
+        JFileChooser fc = new JFileChooser(dir);
         fc.setFileFilter(new FileNameExtensionFilter("Fractal Location (*.json)", "json"));
         return fc;
     }

@@ -226,6 +226,27 @@ public class DrawingApp extends JFrame {
 
         menu.add(presetsMenu);
 
+        // --- Saved Locations (loaded from data/locations directory) ---
+        File locDir = FractalTool.getDefaultLocationDirectory();
+        if (locDir != null && locDir.isDirectory()) {
+            File[] jsonFiles = locDir.listFiles((dir, name) ->
+                    name.toLowerCase().endsWith(".json"));
+            if (jsonFiles != null && jsonFiles.length > 0) {
+                JMenu savedMenu = new JMenu("Saved Locations");
+                java.util.Arrays.sort(jsonFiles, (a, b) ->
+                        a.getName().compareToIgnoreCase(b.getName()));
+                for (File jsonFile : jsonFiles) {
+                    String label = jsonFile.getName().replaceFirst("\\.json$", "")
+                            .replace('_', ' ');
+                    JMenuItem item = new JMenuItem(label);
+                    item.addActionListener(e -> applyFractalAndRender(ft ->
+                            ft.loadLocationFile(jsonFile)));
+                    savedMenu.add(item);
+                }
+                menu.add(savedMenu);
+            }
+        }
+
         return menu;
     }
 
@@ -297,12 +318,38 @@ public class DrawingApp extends JFrame {
     }
 
     public static void main(String[] args) {
+        File gradientDir = null;
+        File locationDir = null;
+
         // Parse command-line arguments
         for (int i = 0; i < args.length; i++) {
             if ("--gradient-dir".equals(args[i]) && i + 1 < args.length) {
-                java.io.File dir = new java.io.File(args[++i]);
-                com.seanick80.drawingapp.gradient.GradientEditorDialog.setDefaultDirectory(dir);
+                gradientDir = new File(args[++i]);
+            } else if ("--location-dir".equals(args[i]) && i + 1 < args.length) {
+                locationDir = new File(args[++i]);
             }
+        }
+
+        // Auto-detect data/ directory relative to the classpath or working directory
+        if (gradientDir == null || locationDir == null) {
+            File dataDir = findDataDir();
+            if (dataDir != null) {
+                if (gradientDir == null) {
+                    File g = new File(dataDir, "gradients");
+                    if (g.isDirectory()) gradientDir = g;
+                }
+                if (locationDir == null) {
+                    File l = new File(dataDir, "locations");
+                    if (l.isDirectory()) locationDir = l;
+                }
+            }
+        }
+
+        if (gradientDir != null) {
+            com.seanick80.drawingapp.gradient.GradientEditorDialog.setDefaultDirectory(gradientDir);
+        }
+        if (locationDir != null) {
+            FractalTool.setDefaultLocationDirectory(locationDir);
         }
 
         SwingUtilities.invokeLater(() -> {
@@ -311,5 +358,26 @@ public class DrawingApp extends JFrame {
             } catch (Exception ignored) {}
             new DrawingApp().setVisible(true);
         });
+    }
+
+    /**
+     * Find the data/ directory by searching upward from the classpath root
+     * or working directory. Handles both development (running from out/)
+     * and typical clone layouts.
+     */
+    private static File findDataDir() {
+        // Try from classpath: out/ is typically at <project>/out, data/ at <project>/data
+        String classpath = System.getProperty("java.class.path", "");
+        for (String entry : classpath.split(File.pathSeparator)) {
+            File cpDir = new File(entry);
+            if (cpDir.isDirectory()) {
+                File data = new File(cpDir.getParentFile(), "data");
+                if (data.isDirectory()) return data;
+            }
+        }
+        // Try from working directory
+        File data = new File("data");
+        if (data.isDirectory()) return data;
+        return null;
     }
 }

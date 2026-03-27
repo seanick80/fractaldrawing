@@ -28,27 +28,42 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 - **Palette-to-gradient**: Click any color in the palette while the fractal tool is active to instantly generate a gradient favoring that color with triadic complementary hues
 - **"I Feel Lucky"**: Button that finds a random interesting Mandelbrot location with varied boundary detail
 - **Save/Load locations**: Export and import fractal coordinates as JSON for bookmarking and sharing
-- **Preset locations**: Built-in menu with interesting locations from Seahorse Valley to 10^18 zoom
+- **Preset locations**: Built-in menu with interesting locations from Seahorse Valley to 10^18 zoom, plus a "Saved Locations" menu auto-populated from `data/locations/`
 - **Async rendering**: Non-blocking renders with cancellation support for responsive UI
 - **Render progress**: Live percentage, row count, elapsed time, and ETA display during slow renders
 - **Extensible type system**: New fractal types auto-populate UI via registry — implement `FractalType`, register, done
 
 ## Build & Run
 
-Requires Java 17+.
+Requires Java 17+. Clone the repo and run — bundled data files (gradients, saved locations) are auto-detected.
 
 ```bash
+git clone https://github.com/seanick80/fractaldrawing.git
+cd fractaldrawing
+
 # Unix/Git Bash
 ./build.sh run
 
 # Windows
 build.cmd run
+
+# Or build separately, then run
+./build.sh       # compile to out/
+./run.sh         # run (auto-builds if needed)
+```
+
+The app auto-discovers the `data/` directory relative to its classpath, providing default gradients and saved locations without manual configuration. CLI overrides are available:
+
+```bash
+java -cp out com.seanick80.drawingapp.DrawingApp \
+    --gradient-dir path/to/gradients \
+    --location-dir path/to/locations
 ```
 
 ## Testing
 
 ```bash
-# Run regression tests (130 assertions covering all render modes and fractal types)
+# Run regression tests (135 assertions covering all render modes and fractal types)
 ./test.sh       # Unix/Git Bash
 test.cmd        # Windows
 
@@ -101,6 +116,10 @@ Benchmark locations included:
 ## Architecture
 
 ```
+data/
+├── gradients/               # Default .grd color gradient files
+└── locations/               # Saved fractal locations (.json), auto-populates menu
+
 src/com/seanick80/drawingapp/
 ├── DrawingApp.java          # Main frame, menus (File, Edit, Fractal)
 ├── DrawingCanvas.java       # Canvas with mouse/wheel event routing

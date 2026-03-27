@@ -20,5 +20,5 @@ echo Build successful.
 
 if "%1"=="run" (
     echo Starting Drawing App...
-    java -cp "%OUT%" com.seanick80.drawingapp.DrawingApp
+    java -cp "%OUT%" com.seanick80.drawingapp.DrawingApp --gradient-dir "%BASEDIR%data\gradients" --location-dir "%BASEDIR%data\locations"
 )

@@ -1407,14 +1407,15 @@ public class FractalRenderTest {
             check("interpolation: rendered=4", interpAnim.getRenderedFrameCount() == 4);
             check("interpolation: total AVI=13", interpAnim.getTotalFrames() == 13);
 
-            // Test blend produces intermediate colors
-            BufferedImage black = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
-            BufferedImage white = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
-            for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++)
-                white.setRGB(i, j, 0xFFFFFF);
-            BufferedImage mid = ZoomAnimator.blendFrames(black, white, 0.5f);
-            int midR = (mid.getRGB(0, 0) >> 16) & 0xFF;
-            check("blend 50% gives ~127", midR >= 125 && midR <= 129);
+            // Test zoomCrop preserves center pixel and produces valid output
+            BufferedImage src = new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB);
+            src.setRGB(5, 5, 0xFF0000); // red at center
+            BufferedImage cropped = ZoomAnimator.zoomCrop(src, 2.0);
+            check("zoomCrop produces same size", cropped.getWidth() == 10 && cropped.getHeight() == 10);
+            // Center of the cropped image should be near the center of src
+            int centerRGB = cropped.getRGB(5, 5);
+            int centerR = (centerRGB >> 16) & 0xFF;
+            check("zoomCrop center has red content", centerR > 50);
         } catch (Exception e) {
             check("zoom animation render failed: " + e.getMessage(), false);
         } finally {

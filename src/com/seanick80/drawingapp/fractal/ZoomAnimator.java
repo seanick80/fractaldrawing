@@ -258,6 +258,7 @@ public class ZoomAnimator {
         // Collect forward AVI frames (rendered + interpolated) for boomerang reuse
         List<BufferedImage> forwardAviFrames = boomerang ? new ArrayList<>() : null;
         BufferedImage prevFrame = null;
+        double prevZoom = 1.0;
 
         File aviFile = new File(outputDir, "zoom.avi");
         try (AviWriter avi = new AviWriter(aviFile, width, height, fps)) {
@@ -274,6 +275,7 @@ public class ZoomAnimator {
 
                     double t = (double) f / framesPerSegment;
                     Keyframe interpolated = interpolate(from, to, t);
+                    double curZoom = interpolated.zoomLevel.doubleValue();
 
                     long t0 = System.currentTimeMillis();
                     BufferedImage frame = renderFrame(interpolated);
@@ -282,19 +284,23 @@ public class ZoomAnimator {
                     String filename = String.format("frame_%04d.png", renderedIndex);
                     ImageIO.write(frame, "PNG", new File(outputDir, filename));
 
-                    // Write interpolated blend frames between previous and current
+                    // Insert interpolated zoom-crop frames between previous and current
                     if (prevFrame != null && interpolationFrames > 0) {
+                        double zoomRatio = curZoom / prevZoom;
                         for (int b = 1; b <= interpolationFrames; b++) {
-                            float alpha = (float) b / (interpolationFrames + 1);
-                            BufferedImage blended = blendFrames(prevFrame, frame, alpha);
-                            avi.addFrame(blended);
-                            if (boomerang) forwardAviFrames.add(blended);
+                            double frac = (double) b / (interpolationFrames + 1);
+                            // Exponential interpolation of zoom within the step
+                            double stepZoom = Math.pow(zoomRatio, frac);
+                            BufferedImage cropped = zoomCrop(prevFrame, stepZoom);
+                            avi.addFrame(cropped);
+                            if (boomerang) forwardAviFrames.add(cropped);
                         }
                     }
 
                     avi.addFrame(frame);
                     if (boomerang) forwardAviFrames.add(frame);
                     prevFrame = frame;
+                    prevZoom = curZoom;
 
                     if (callback != null) {
                         callback.onFrame(renderedIndex, renderedTotal, renderTime);
@@ -315,25 +321,64 @@ public class ZoomAnimator {
     }
 
     /**
-     * Blend two frames with linear interpolation.
-     * alpha=0 returns frameA, alpha=1 returns frameB.
+     * Crop the center of the source image by the given zoom factor and scale
+     * back to full size with bilinear interpolation. Simulates a smooth
+     * digital zoom between rendered fractal frames.
+     *
+     * @param src  source image
+     * @param zoom crop factor (1.0 = no crop, 2.0 = crop to center 50%)
      */
-    static BufferedImage blendFrames(BufferedImage frameA, BufferedImage frameB, float alpha) {
-        int w = frameA.getWidth();
-        int h = frameA.getHeight();
+    static BufferedImage zoomCrop(BufferedImage src, double zoom) {
+        int w = src.getWidth();
+        int h = src.getHeight();
         BufferedImage result = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-        float oneMinusAlpha = 1.0f - alpha;
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                int rgbA = frameA.getRGB(x, y);
-                int rgbB = frameB.getRGB(x, y);
-                int r = (int) (((rgbA >> 16) & 0xFF) * oneMinusAlpha + ((rgbB >> 16) & 0xFF) * alpha);
-                int g = (int) (((rgbA >> 8) & 0xFF) * oneMinusAlpha + ((rgbB >> 8) & 0xFF) * alpha);
-                int b = (int) ((rgbA & 0xFF) * oneMinusAlpha + (rgbB & 0xFF) * alpha);
-                result.setRGB(x, y, (r << 16) | (g << 8) | b);
+
+        // Source rectangle: centered crop of size (w/zoom, h/zoom)
+        double cropW = w / zoom;
+        double cropH = h / zoom;
+        double srcX0 = (w - cropW) / 2.0;
+        double srcY0 = (h - cropH) / 2.0;
+
+        for (int dy = 0; dy < h; dy++) {
+            double srcY = srcY0 + (dy + 0.5) * cropH / h - 0.5;
+            int sy = (int) srcY;
+            double fy = srcY - sy;
+            int sy1 = Math.min(sy + 1, h - 1);
+            sy = Math.max(sy, 0);
+            sy1 = Math.max(sy1, 0);
+
+            for (int dx = 0; dx < w; dx++) {
+                double srcX = srcX0 + (dx + 0.5) * cropW / w - 0.5;
+                int sx = (int) srcX;
+                double fx = srcX - sx;
+                int sx1 = Math.min(sx + 1, w - 1);
+                sx = Math.max(sx, 0);
+                sx1 = Math.max(sx1, 0);
+
+                // Bilinear interpolation of 4 source pixels
+                int c00 = src.getRGB(sx, sy);
+                int c10 = src.getRGB(sx1, sy);
+                int c01 = src.getRGB(sx, sy1);
+                int c11 = src.getRGB(sx1, sy1);
+
+                int r = bilinear(c00, c10, c01, c11, fx, fy, 16);
+                int g = bilinear(c00, c10, c01, c11, fx, fy, 8);
+                int b = bilinear(c00, c10, c01, c11, fx, fy, 0);
+                result.setRGB(dx, dy, (r << 16) | (g << 8) | b);
             }
         }
         return result;
+    }
+
+    private static int bilinear(int c00, int c10, int c01, int c11,
+                                double fx, double fy, int shift) {
+        int v00 = (c00 >> shift) & 0xFF;
+        int v10 = (c10 >> shift) & 0xFF;
+        int v01 = (c01 >> shift) & 0xFF;
+        int v11 = (c11 >> shift) & 0xFF;
+        double top = v00 + (v10 - v00) * fx;
+        double bot = v01 + (v11 - v01) * fx;
+        return Math.max(0, Math.min(255, (int) (top + (bot - top) * fy)));
     }
 
     /**
