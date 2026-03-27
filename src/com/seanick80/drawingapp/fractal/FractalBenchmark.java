@@ -69,7 +69,7 @@ public class FractalBenchmark {
             new BigDecimal(loc.get("maxImag"))
         );
         renderer.setMaxIterations(Integer.parseInt(loc.get("maxIterations")));
-        if (loc.containsKey("juliaReal") && loc.containsKey("juliaImag")) {
+        if ("JULIA".equals(loc.get("type")) && loc.containsKey("juliaReal") && loc.containsKey("juliaImag")) {
             renderer.setJuliaConstant(
                 new BigDecimal(loc.get("juliaReal")),
                 new BigDecimal(loc.get("juliaImag"))
@@ -103,8 +103,9 @@ public class FractalBenchmark {
 
             for (FractalRenderer.RenderMode mode : modes) {
                 renderer.setRenderMode(mode);
-                // Clear cache between modes
+                // Clear all caches between modes
                 renderer.getCache().clear();
+                renderer.clearPrevRenderCache();
 
                 System.out.printf("--- Mode: %s ---%n", mode);
 
@@ -114,6 +115,7 @@ public class FractalBenchmark {
                     long t0 = System.currentTimeMillis();
                     renderer.render(width, height, gradient);
                     renderer.getCache().clear();
+                    renderer.clearPrevRenderCache();
                     System.out.printf("%s%n", formatTime(System.currentTimeMillis() - t0));
                 }
 
@@ -123,6 +125,7 @@ public class FractalBenchmark {
                 for (int i = 0; i < runs; i++) {
                     System.out.printf("  Run %d/%d...    ", i + 1, runs);
                     renderer.getCache().clear();
+                    renderer.clearPrevRenderCache();
                     long t0 = System.currentTimeMillis();
                     lastImage = renderer.render(width, height, gradient);
                     times[i] = System.currentTimeMillis() - t0;
@@ -147,6 +150,7 @@ public class FractalBenchmark {
                 long t0 = System.currentTimeMillis();
                 renderer.render(width, height, gradient);
                 renderer.getCache().clear();
+                renderer.clearPrevRenderCache();
                 System.out.printf("%s%n", formatTime(System.currentTimeMillis() - t0));
             }
 
@@ -155,6 +159,7 @@ public class FractalBenchmark {
             for (int i = 0; i < runs; i++) {
                 System.out.printf("Run %d/%d...    ", i + 1, runs);
                 renderer.getCache().clear();
+                renderer.clearPrevRenderCache();
                 long t0 = System.currentTimeMillis();
                 lastImage = renderer.render(width, height, gradient);
                 times[i] = System.currentTimeMillis() - t0;

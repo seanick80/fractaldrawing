@@ -200,6 +200,17 @@ public class FractalRenderer {
 
     public IterationQuadTree getCache() { return cache; }
 
+    /** Clear the previous-render cache used for cross-render pixel reuse. */
+    public void clearPrevRenderCache() {
+        prevPixelCx = null;
+        prevPixelCy = null;
+        prevIters = null;
+        prevScaleX = null;
+        prevScaleY = null;
+        prevWidth = 0;
+        prevHeight = 0;
+    }
+
     public boolean isLastRenderBigDecimal() { return lastRenderWasBigDecimal; }
 
     public boolean isInteriorPruning() { return interiorPruning; }
@@ -977,6 +988,7 @@ public class FractalRenderer {
                     int idx = py * imgWidth + px;
                     interiorPixel[idx] = true;
                     rgb[idx] = blackRgb;
+                    renderIters[idx] = maxIterations;
                 }
             }
             return;
