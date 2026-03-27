@@ -21,7 +21,9 @@ import java.math.MathContext;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -613,7 +615,7 @@ public class FractalTool implements Tool {
     private void startZoomAnimation(Component parent) {
         Window window = SwingUtilities.getWindowAncestor(parent);
 
-        // Current viewport is the start keyframe (zoom=1 for default, calculated from bounds)
+        // Current viewport info for "current location" option
         BigDecimal rangeR = renderer.getMaxRealBig().subtract(renderer.getMinRealBig());
         BigDecimal rangeI = renderer.getMaxImagBig().subtract(renderer.getMinImagBig());
         double currentRange = Math.min(rangeR.doubleValue(), rangeI.doubleValue());
@@ -621,51 +623,116 @@ public class FractalTool implements Tool {
         MathContext mc = getZoomMathContext(renderer.getMinRealBig(), renderer.getMaxRealBig(),
                                             renderer.getMinImagBig(), renderer.getMaxImagBig());
         BigDecimal two = new BigDecimal(2);
-        BigDecimal centerR = renderer.getMinRealBig().add(renderer.getMaxRealBig(), mc).divide(two, mc);
-        BigDecimal centerI = renderer.getMinImagBig().add(renderer.getMaxImagBig(), mc).divide(two, mc);
+        BigDecimal curCenterR = renderer.getMinRealBig().add(renderer.getMaxRealBig(), mc).divide(two, mc);
+        BigDecimal curCenterI = renderer.getMinImagBig().add(renderer.getMaxImagBig(), mc).divide(two, mc);
 
-        // Dialog to configure the zoom animation
-        JTextField framesField = new JTextField("60", 5);
-        JTextField zoomFactorField = new JTextField("100", 5);
-        JTextField widthField = new JTextField(lastImage != null ? String.valueOf(lastImage.getWidth()) : "640", 5);
-        JTextField heightField = new JTextField(lastImage != null ? String.valueOf(lastImage.getHeight()) : "480", 5);
+        // Step 1: Build candidate list — current viewport + auto-discovered points
+        if (progressLabel != null) progressLabel.setText("Scanning for interesting points...");
+        List<ZoomAnimator.ZoomTarget> autoTargets = ZoomAnimator.findInterestingPoints(
+                renderer.getType(), 512, 3);
 
-        JPanel inputPanel = new JPanel(new java.awt.GridLayout(4, 2, 4, 4));
-        inputPanel.add(new JLabel("Total frames:"));
-        inputPanel.add(framesField);
-        inputPanel.add(new JLabel("Zoom factor:"));
-        inputPanel.add(zoomFactorField);
-        inputPanel.add(new JLabel("Frame width:"));
-        inputPanel.add(widthField);
-        inputPanel.add(new JLabel("Frame height:"));
-        inputPanel.add(heightField);
+        // Create current-viewport preview
+        BufferedImage curPreview = new BufferedImage(120, 90, BufferedImage.TYPE_INT_RGB);
+        if (lastImage != null) {
+            java.awt.Graphics2D g = curPreview.createGraphics();
+            g.drawImage(lastImage, 0, 0, 120, 90, null);
+            g.dispose();
+        }
+        ZoomAnimator.ZoomTarget currentTarget = new ZoomAnimator.ZoomTarget(
+                curCenterR, curCenterI, Double.MAX_VALUE, curPreview);
 
-        int result = JOptionPane.showConfirmDialog(window, inputPanel,
-                "Zoom Animation", JOptionPane.OK_CANCEL_OPTION);
+        List<ZoomAnimator.ZoomTarget> allTargets = new ArrayList<>();
+        allTargets.add(currentTarget);
+        allTargets.addAll(autoTargets);
+
+        // Step 2: Show target picker dialog with previews
+        JPanel pickerPanel = new JPanel(new java.awt.BorderLayout(8, 8));
+        pickerPanel.add(new JLabel("Select a zoom target:"), java.awt.BorderLayout.NORTH);
+
+        JPanel thumbPanel = new JPanel(new java.awt.GridLayout(1, allTargets.size(), 8, 8));
+        javax.swing.ButtonGroup group = new javax.swing.ButtonGroup();
+        JRadioButton[] buttons = new JRadioButton[allTargets.size()];
+        for (int i = 0; i < allTargets.size(); i++) {
+            ZoomAnimator.ZoomTarget t = allTargets.get(i);
+            JPanel card = new JPanel(new java.awt.BorderLayout(4, 4));
+            card.add(new JLabel(new ImageIcon(t.preview)), java.awt.BorderLayout.CENTER);
+            if (i == 0) {
+                buttons[i] = new JRadioButton("Current view");
+            } else {
+                buttons[i] = new JRadioButton(String.format("Auto #%d", i));
+            }
+            if (i == 0) buttons[i].setSelected(true);
+            group.add(buttons[i]);
+            card.add(buttons[i], java.awt.BorderLayout.SOUTH);
+            thumbPanel.add(card);
+        }
+        pickerPanel.add(thumbPanel, java.awt.BorderLayout.CENTER);
+
+        // Settings panel below thumbnails
+        JTextField framesField = new JTextField("120", 5);
+        JTextField fpsField = new JTextField("30", 5);
+        JTextField zoomField = new JTextField(
+            String.valueOf((long) Math.max(currentZoom * 10, 10000)), 8);
+        JTextField widthField = new JTextField(
+            lastImage != null ? String.valueOf(lastImage.getWidth()) : "640", 5);
+        JTextField heightField = new JTextField(
+            lastImage != null ? String.valueOf(lastImage.getHeight()) : "480", 5);
+
+        JPanel settingsPanel = new JPanel(new java.awt.GridLayout(5, 2, 4, 4));
+        settingsPanel.add(new JLabel("Total frames:"));
+        settingsPanel.add(framesField);
+        settingsPanel.add(new JLabel("FPS:"));
+        settingsPanel.add(fpsField);
+        settingsPanel.add(new JLabel("Final zoom:"));
+        settingsPanel.add(zoomField);
+        settingsPanel.add(new JLabel("Frame width:"));
+        settingsPanel.add(widthField);
+        settingsPanel.add(new JLabel("Frame height:"));
+        settingsPanel.add(heightField);
+        pickerPanel.add(settingsPanel, java.awt.BorderLayout.SOUTH);
+
+        int result = JOptionPane.showConfirmDialog(window, pickerPanel,
+                "Zoom Movie — Pick Target", JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
         if (result != JOptionPane.OK_OPTION) return;
 
+        // Find which target was selected
+        int selectedIdx = 0;
+        for (int i = 0; i < buttons.length; i++) {
+            if (buttons[i].isSelected()) { selectedIdx = i; break; }
+        }
+        ZoomAnimator.ZoomTarget target = allTargets.get(selectedIdx);
+
         int totalFrames;
-        double zoomFactor;
+        int fpsVal;
+        double finalZoom;
         int frameW, frameH;
         try {
             totalFrames = Integer.parseInt(framesField.getText().trim());
-            zoomFactor = Double.parseDouble(zoomFactorField.getText().trim());
+            fpsVal = Integer.parseInt(fpsField.getText().trim());
+            finalZoom = Double.parseDouble(zoomField.getText().trim());
             frameW = Integer.parseInt(widthField.getText().trim());
             frameH = Integer.parseInt(heightField.getText().trim());
         } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(window, "Invalid number format", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(window, "Invalid number format",
+                    "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
+        // Step 3: Choose output directory
         JFileChooser fc = new JFileChooser(lastDirectory != null ? lastDirectory : new File("."));
         fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        fc.setDialogTitle("Select output directory for frames");
+        fc.setDialogTitle("Select output directory for zoom movie");
         if (fc.showSaveDialog(window) != JFileChooser.APPROVE_OPTION) return;
         File outputDir = fc.getSelectedFile();
         lastDirectory = outputDir;
 
-        // Build keyframes: current view → zoomed-in view
-        double endZoom = currentZoom * zoomFactor;
+        // Step 4: Build keyframes — fixed center at target, zoom 1 → finalZoom
+        // Fixed center is the standard technique: at zoom=1 the full set is
+        // visible (slightly offset), and every frame shows boundary detail.
+        // Panning across the set while zooming always hits the black interior.
+        int movieIter = ZoomAnimator.iterationsForZoom(finalZoom, 256);
+
         FractalRenderer animRenderer = new FractalRenderer();
         animRenderer.setType(renderer.getType());
         animRenderer.setRenderMode(FractalRenderer.RenderMode.AUTO);
@@ -673,13 +740,17 @@ public class FractalTool implements Tool {
         ZoomAnimator animator = new ZoomAnimator(animRenderer, gradient);
         animator.setSize(frameW, frameH);
         animator.setFramesPerSegment(totalFrames - 1);
-        animator.addKeyframe(new ZoomAnimator.Keyframe(centerR, centerI,
-                new BigDecimal(Double.toString(currentZoom)), renderer.getMaxIterations()));
-        animator.addKeyframe(new ZoomAnimator.Keyframe(centerR, centerI,
-                new BigDecimal(Double.toString(endZoom)), renderer.getMaxIterations()));
+        animator.setFps(fpsVal);
+        // Both keyframes use the TARGET center
+        animator.addKeyframe(new ZoomAnimator.Keyframe(
+                target.centerReal, target.centerImag,
+                BigDecimal.ONE, movieIter));
+        animator.addKeyframe(new ZoomAnimator.Keyframe(
+                target.centerReal, target.centerImag,
+                new BigDecimal(Double.toString(finalZoom)), movieIter));
 
-        // Run in background
-        if (progressLabel != null) progressLabel.setText("Rendering animation...");
+        // Step 5: Render in background
+        if (progressLabel != null) progressLabel.setText("Rendering zoom movie...");
 
         new SwingWorker<Integer, String>() {
             @Override
@@ -701,15 +772,16 @@ public class FractalTool implements Tool {
                 try {
                     int count = get();
                     if (progressLabel != null) {
-                        progressLabel.setText("Animation: " + count + " frames saved");
+                        progressLabel.setText("Zoom movie: " + count + " frames saved");
                     }
                     JOptionPane.showMessageDialog(window,
-                            count + " frames saved to:\n" + outputDir.getAbsolutePath(),
-                            "Zoom Animation Complete", JOptionPane.INFORMATION_MESSAGE);
+                            count + " frames + zoom.avi saved to:\n" + outputDir.getAbsolutePath(),
+                            "Zoom Movie Complete", JOptionPane.INFORMATION_MESSAGE);
                 } catch (Exception e) {
-                    if (progressLabel != null) progressLabel.setText("Animation failed");
+                    if (progressLabel != null) progressLabel.setText("Zoom movie failed");
                     JOptionPane.showMessageDialog(window,
-                            "Error: " + e.getMessage(), "Animation Error", JOptionPane.ERROR_MESSAGE);
+                            "Error: " + e.getMessage(), "Zoom Movie Error",
+                            JOptionPane.ERROR_MESSAGE);
                 }
             }
         }.execute();

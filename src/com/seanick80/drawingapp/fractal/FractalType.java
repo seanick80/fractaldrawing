@@ -30,6 +30,15 @@ public interface FractalType {
     /** Returns the perturbation strategy, or null if not supported. */
     default PerturbationStrategy getPerturbationStrategy() { return null; }
 
+    /** Default viewport center (real axis). Override for off-center fractals. */
+    default BigDecimal defaultCenterReal() { return BigDecimal.ZERO; }
+
+    /** Default viewport center (imaginary axis). */
+    default BigDecimal defaultCenterImag() { return BigDecimal.ZERO; }
+
+    /** Default max iterations for the overview zoom level. */
+    default int defaultMaxIterations() { return 256; }
+
     /** Look up a type by name. Returns null if not found. */
     static FractalType valueOf(String name) {
         return FractalTypeRegistry.getDefault().getByName(name);

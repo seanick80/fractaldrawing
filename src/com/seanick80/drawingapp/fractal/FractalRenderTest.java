@@ -1359,8 +1359,9 @@ public class FractalRenderTest {
         ZoomAnimator.Keyframe kMid = ZoomAnimator.interpolate(from, to, 0.5);
         check("interpolate t=0.5 zoom ~ 10.0 (exponential)",
                 Math.abs(kMid.zoomLevel.doubleValue() - 10.0) < 0.5);
-        check("interpolate t=0.5 centerR ~ -0.25",
-                Math.abs(kMid.centerReal.doubleValue() - (-0.25)) < 0.001);
+        // Ease-in (t^2): at t=0.5, panT=0.25, so centerR = 0*(1-0.25) + (-0.5)*0.25 = -0.125
+        check("interpolate t=0.5 centerR ~ -0.125 (ease-in)",
+                Math.abs(kMid.centerReal.doubleValue() - (-0.125)) < 0.001);
     }
 
     private static void testZoomAnimatorRenderFrames() {
@@ -1369,11 +1370,14 @@ public class FractalRenderTest {
         ZoomAnimator animator = new ZoomAnimator(r, gradient());
         animator.setSize(50, 50);
         animator.setFramesPerSegment(3);
+        animator.setBoomerang(false);
+        animator.setInterpolationFrames(0); // no interpolation for test simplicity
 
         animator.addKeyframe(new ZoomAnimator.Keyframe(0.0, 0.0, 1.0, 100));
         animator.addKeyframe(new ZoomAnimator.Keyframe(-0.5, 0.0, 10.0, 200));
 
-        check("total frames = 4 (3 per segment + 1)", animator.getTotalFrames() == 4);
+        check("rendered frame count = 4", animator.getRenderedFrameCount() == 4);
+        check("total AVI frames = 4 (no interpolation)", animator.getTotalFrames() == 4);
 
         // Render to temp directory
         File tempDir = new File(System.getProperty("java.io.tmpdir"), "fractal_anim_test_" + System.currentTimeMillis());
@@ -1390,6 +1394,27 @@ public class FractalRenderTest {
                 if (!f.exists()) { allExist = false; break; }
             }
             check("all frame files created", allExist);
+
+            // Test interpolation frame count calculation
+            ZoomAnimator interpAnim = new ZoomAnimator(r, gradient());
+            interpAnim.setSize(50, 50);
+            interpAnim.setFramesPerSegment(3);
+            interpAnim.setBoomerang(false);
+            interpAnim.setInterpolationFrames(3);
+            interpAnim.addKeyframe(new ZoomAnimator.Keyframe(0.0, 0.0, 1.0, 100));
+            interpAnim.addKeyframe(new ZoomAnimator.Keyframe(-0.5, 0.0, 10.0, 200));
+            // 4 rendered frames, 3 interpolated between each pair = (4-1)*4+1 = 13 AVI frames
+            check("interpolation: rendered=4", interpAnim.getRenderedFrameCount() == 4);
+            check("interpolation: total AVI=13", interpAnim.getTotalFrames() == 13);
+
+            // Test blend produces intermediate colors
+            BufferedImage black = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+            BufferedImage white = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+            for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++)
+                white.setRGB(i, j, 0xFFFFFF);
+            BufferedImage mid = ZoomAnimator.blendFrames(black, white, 0.5f);
+            int midR = (mid.getRGB(0, 0) >> 16) & 0xFF;
+            check("blend 50% gives ~127", midR >= 125 && midR <= 129);
         } catch (Exception e) {
             check("zoom animation render failed: " + e.getMessage(), false);
         } finally {

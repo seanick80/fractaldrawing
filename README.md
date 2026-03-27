@@ -48,7 +48,7 @@ build.cmd run
 ## Testing
 
 ```bash
-# Run regression tests (114 assertions covering all render modes and fractal types)
+# Run regression tests (130 assertions covering all render modes and fractal types)
 ./test.sh       # Unix/Git Bash
 test.cmd        # Windows
 
@@ -72,6 +72,7 @@ Tests cover:
 - Deep zoom cache safety: no false hits from stale double-precision cache entries
 - Previous-render BigDecimal cache: 25% reuse on 2x zoom, 75% on pan, pixel-identical to from-scratch
 - Shallow zoom quadtree cache: pan reuse verified with correctness checks
+- Zoom animation: keyframe interpolation, frame count, AVI writer round-trip
 
 ## Benchmarking
 
@@ -122,9 +123,11 @@ src/com/seanick80/drawingapp/
 │   ├── FractalColorMapper.java # Color LUT construction + mapping
 │   ├── IterationQuadTree.java  # Spatial cache for iteration counts
 │   ├── FractalJsonUtil.java    # Shared JSON parsing
+│   ├── ZoomAnimator.java      # Zoom movie generator with keyframe interpolation
+│   ├── AviWriter.java          # Uncompressed RGB AVI video writer
 │   ├── FractalBenchmark.java   # CLI performance benchmark
 │   ├── PerturbationEval.java   # CLI perturbation correctness evaluation
-│   └── FractalRenderTest.java  # 114-assertion regression test suite
+│   └── FractalRenderTest.java  # Regression test suite
 └── tools/
     ├── Tool.java            # Tool interface
     ├── FractalTool.java     # Fractal UI: zoom, pan, save/load, async render
@@ -186,4 +189,5 @@ public final class MyFractalType implements FractalType {
 - ~~**Palette-to-gradient**~~ DONE — Click palette colors to auto-generate triadic gradients
 - ~~**"I Feel Lucky"**~~ DONE — Random interesting Mandelbrot location finder
 - **More fractal types** — Mandelbulb/Mandelbox (3D), Sierpinski triangle/carpet, Koch snowflake (IFS fractals)
-- **Animations** — Iteration animation, zoom animation, palette cycle animation
+- **Zoom movie export** — Auto-discovers visually interesting boundary points, lets you pick a zoom target (or use current location), renders a smooth exponential zoom animation as numbered PNGs + uncompressed AVI video. Boomerang mode zooms in then back out for seamless looping.
+- **Animations** — Iteration animation, palette cycle animation

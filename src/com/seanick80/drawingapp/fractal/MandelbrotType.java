@@ -42,6 +42,11 @@ public final class MandelbrotType implements FractalType {
     }
 
     @Override
+    public BigDecimal defaultCenterReal() {
+        return new BigDecimal("-0.5");
+    }
+
+    @Override
     public boolean supportsPerturbation() { return true; }
 
     @Override

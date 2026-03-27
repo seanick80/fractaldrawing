@@ -40,10 +40,12 @@ Render the current fractal view at print-quality resolution (e.g., 4000×3000 or
 ## ~~Image zoom~~ DONE (2026-03-21)
 Scroll wheel zooms the rendered image view (0.25x–32x) centered on cursor — no re-render. Ctrl+scroll does fractal zoom (changes the complex-plane viewport). View zoom resets automatically when a new fractal render completes. Mouse coordinates are transformed to image space so click-to-zoom and pan work correctly at any view zoom level.
 
+## ~~Zoom animation~~ DONE (2026-03-27)
+Zoom movie export with auto-discovery of visually interesting boundary points. Scans a low-res iteration grid, scores pixels by local iteration variance × depth bonus, and presents top candidates with preview thumbnails. Users can pick an auto-discovered target or use their current viewport location. Renders smooth exponential zoom as numbered PNGs + uncompressed AVI video (via `AviWriter`). Boomerang mode reuses forward frames in reverse for seamless looping without re-rendering. `ZoomAnimator` handles keyframe interpolation (exponential zoom, t² ease-in for position, linear iteration count). `AviWriter` writes RIFF AVI with uncompressed RGB/DIB frames — universal playback, no codec needed.
+
 ## Features I’d like to explore when we have more time:
 ### Animations
 *   Iteration animation - add one iteration, display it, add another, etc - up to the point where not many iterations are present anymore. Save the resulting iteration slides as a video which can be played back.
-*   Zoom animation
 *   Palette cycle animation
 
 My previous version of this app had these features as selectable animations, as a screen saver.
