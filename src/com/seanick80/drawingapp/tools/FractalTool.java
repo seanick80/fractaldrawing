@@ -6,6 +6,7 @@ import com.seanick80.drawingapp.fractal.FractalRenderer;
 import com.seanick80.drawingapp.fractal.FractalType;
 import com.seanick80.drawingapp.fractal.JuliaType;
 import com.seanick80.drawingapp.fractal.FractalTypeRegistry;
+import com.seanick80.drawingapp.fractal.TerrainViewer;
 import com.seanick80.drawingapp.fractal.ZoomAnimator;
 import com.seanick80.drawingapp.gradient.ColorGradient;
 import com.seanick80.drawingapp.gradient.GradientEditorDialog;
@@ -53,6 +54,7 @@ public class FractalTool implements Tool {
     private JPanel gradientPreview;
     private PropertyChangeListener colorListener;
     private ColorPicker registeredColorPicker;
+    private boolean active;
 
     // Pan state
     private int dragStartX, dragStartY;
@@ -220,6 +222,15 @@ public class FractalTool implements Tool {
         zoomAnimBtn.setFont(zoomAnimBtn.getFont().deriveFont(10f));
         zoomAnimBtn.addActionListener(e -> startZoomAnimation(panel));
         panel.add(zoomAnimBtn);
+        panel.add(Box.createVerticalStrut(4));
+
+        JButton flyoverBtn = new JButton("3D Flyover");
+        flyoverBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        flyoverBtn.setMaximumSize(new Dimension(120, 28));
+        flyoverBtn.setFont(flyoverBtn.getFont().deriveFont(10f));
+        flyoverBtn.addActionListener(e ->
+                TerrainViewer.openFromRenderer(renderer, gradient));
+        panel.add(flyoverBtn);
         panel.add(Box.createVerticalStrut(12));
 
         // Zoom / position info
@@ -268,10 +279,15 @@ public class FractalTool implements Tool {
 
     @Override
     public void onActivated(BufferedImage image, DrawingCanvas canvas) {
+        active = true;
         lastImage = image;
         lastCanvas = canvas;
         registerColorListener(canvas);
         renderAsync(image, canvas);
+    }
+
+    public void onDeactivated() {
+        active = false;
     }
 
     private void registerColorListener(DrawingCanvas canvas) {
@@ -284,6 +300,7 @@ public class FractalTool implements Tool {
         if (picker == null) return;
 
         colorListener = evt -> {
+            if (!active) return;
             if (!ColorPicker.PROP_FOREGROUND_COLOR.equals(evt.getPropertyName())) return;
             Color newColor = (Color) evt.getNewValue();
             gradient = ColorGradient.fromBaseColor(newColor);

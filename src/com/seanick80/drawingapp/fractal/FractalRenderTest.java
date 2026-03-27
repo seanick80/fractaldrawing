@@ -83,6 +83,9 @@ public class FractalRenderTest {
         testZoomAnimatorInterpolation();
         testZoomAnimatorRenderFrames();
 
+        // 3D terrain tests
+        testTerrainRenderer();
+
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
         if (failed > 0) {
@@ -1521,6 +1524,99 @@ public class FractalRenderTest {
                 diffCount, pe.length, diffPct);
         check("perturbation guessing <5% diff from exact (got " +
               String.format("%.1f%%", diffPct) + ")", diffPct < 5.0);
+    }
+
+    // --- 3D Terrain Renderer Tests ---
+
+    private static void testTerrainRenderer() {
+        System.out.println("\n  -- 3D Terrain Renderer --");
+
+        // Diamond-square terrain generation
+        int power = 6; // 65x65 map for fast testing
+        int mapSize = (1 << power) + 1;
+        float[] heightmap = TerrainRenderer.generateTerrain(power, 0.5f, 42);
+        check("terrain generation produces correct size",
+                heightmap.length == mapSize * mapSize);
+
+        // Values should be normalized 0..1
+        float min = Float.MAX_VALUE, max = Float.MIN_VALUE;
+        for (float v : heightmap) {
+            if (v < min) min = v;
+            if (v > max) max = v;
+        }
+        check("terrain values normalized (min~0)", min >= -0.01f && min <= 0.01f);
+        check("terrain values normalized (max~1)", max >= 0.99f && max <= 1.01f);
+
+        // Height variation should exist
+        float sum = 0;
+        for (float v : heightmap) sum += v;
+        float mean = sum / heightmap.length;
+        check("terrain has reasonable mean height", mean > 0.2f && mean < 0.8f);
+
+        // Build color map from gradient
+        int[] colormap = TerrainRenderer.buildColorMap(heightmap, gradient());
+        check("terrain colormap same size as heightmap", colormap.length == heightmap.length);
+
+        // Colors should have variety
+        boolean hasColorVariety = false;
+        int firstColor = colormap[0];
+        for (int c : colormap) {
+            if (c != firstColor) { hasColorVariety = true; break; }
+        }
+        check("terrain colormap has color variety", hasColorVariety);
+
+        // Render a frame
+        TerrainRenderer tr = new TerrainRenderer(heightmap, colormap, mapSize);
+        BufferedImage frame = tr.render(160, 120, mapSize / 2f, mapSize / 4f, 80, 1.57f, 0);
+        check("terrain render produces image", frame != null);
+        check("terrain render correct size", frame.getWidth() == 160 && frame.getHeight() == 120);
+
+        // Frame should not be all one color
+        int firstPixel = frame.getRGB(0, 0);
+        boolean hasVariety = false;
+        for (int y = 0; y < 120 && !hasVariety; y += 10) {
+            for (int x = 0; x < 160 && !hasVariety; x += 10) {
+                if (frame.getRGB(x, y) != firstPixel) hasVariety = true;
+            }
+        }
+        check("terrain render has color variety", hasVariety);
+
+        // Fog blending
+        int fogResult = TerrainRenderer.blendColor(0xFFFFFF, 0x000000, 0.5f);
+        int fogR = (fogResult >> 16) & 0xFF;
+        check("terrain fog blend 50% gives ~127", fogR >= 125 && fogR <= 129);
+
+        // Start position finder
+        float[] startPos = tr.findStartPosition();
+        check("start position has 3 components", startPos.length == 3);
+        check("start position X in bounds", startPos[0] >= 0 && startPos[0] < mapSize);
+        check("start position Y in bounds", startPos[1] >= 0 && startPos[1] < mapSize);
+        check("start position altitude > 0", startPos[2] > 0);
+
+        // Deterministic generation
+        float[] heightmap2 = TerrainRenderer.generateTerrain(power, 0.5f, 42);
+        boolean identical = true;
+        for (int i = 0; i < heightmap.length; i++) {
+            if (heightmap[i] != heightmap2[i]) { identical = false; break; }
+        }
+        check("terrain generation is deterministic (same seed)", identical);
+
+        // Different seed produces different terrain
+        float[] heightmap3 = TerrainRenderer.generateTerrain(power, 0.5f, 99);
+        boolean different = false;
+        for (int i = 0; i < heightmap.length; i++) {
+            if (heightmap[i] != heightmap3[i]) { different = true; break; }
+        }
+        check("different seed produces different terrain", different);
+
+        // FractalRenderer integration: getLastRenderIters
+        FractalRenderer r = newRenderer();
+        r.setBounds(-2.0, 2.0, -2.0, 2.0);
+        r.render(50, 50, gradient());
+        int[] iters = r.getLastRenderIters();
+        int[] size = r.getLastRenderSize();
+        check("renderer exposes iteration data", iters != null && iters.length == 2500);
+        check("renderer exposes render size", size[0] == 50 && size[1] == 50);
     }
 
     private static void check(String name, boolean condition) {

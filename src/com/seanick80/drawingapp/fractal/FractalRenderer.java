@@ -235,6 +235,14 @@ public class FractalRenderer {
 
     public int[] getProgressiveRgb() { return progressiveRgb; }
 
+    /** Returns the iteration counts from the last completed render, or null. */
+    public int[] getLastRenderIters() { return renderIters; }
+
+    /** Returns the last render dimensions (width in [0], height in [1]). */
+    public int[] getLastRenderSize() {
+        return new int[] { bufferWidth, bufferHeight };
+    }
+
     public int getPrevRenderCacheHits() { return prevRenderCacheHits; }
 
     /**

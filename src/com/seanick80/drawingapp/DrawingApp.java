@@ -187,6 +187,18 @@ public class DrawingApp extends JFrame {
 
         menu.addSeparator();
 
+        JMenuItem flyoverItem = new JMenuItem("3D Flyover");
+        flyoverItem.addActionListener(e -> {
+            FractalTool ft = getFractalTool();
+            if (ft != null) {
+                com.seanick80.drawingapp.fractal.TerrainViewer.openFromRenderer(
+                        ft.getRenderer(), ft.getGradient());
+            }
+        });
+        menu.add(flyoverItem);
+
+        menu.addSeparator();
+
         // --- Preset Locations ---
         JMenu presetsMenu = new JMenu("Locations");
 

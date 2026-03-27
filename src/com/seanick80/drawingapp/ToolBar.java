@@ -330,6 +330,9 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         btn.addActionListener(e -> {
             if (activeTool != null) {
                 toolSizes.put(activeTool.getName(), (int) strokeSpinner.getValue());
+                if (activeTool instanceof com.seanick80.drawingapp.tools.FractalTool ft) {
+                    ft.onDeactivated();
+                }
             }
             activeTool = tool;
             canvas.setActiveTool(tool);
