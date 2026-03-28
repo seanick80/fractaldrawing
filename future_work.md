@@ -43,6 +43,20 @@ Scroll wheel zooms the rendered image view (0.25x–32x) centered on cursor — 
 ## ~~Zoom animation~~ DONE (2026-03-27)
 Zoom movie export with auto-discovery of visually interesting boundary points. Scans a low-res iteration grid, scores pixels by local iteration variance × depth bonus, and presents top candidates with preview thumbnails. Users can pick an auto-discovered target or use their current viewport location. Renders smooth exponential zoom as numbered PNGs + uncompressed AVI video (via `AviWriter`). Boomerang mode reuses forward frames in reverse for seamless looping without re-rendering. `ZoomAnimator` handles keyframe interpolation (exponential zoom, t² ease-in for position, linear iteration count). `AviWriter` writes RIFF AVI with uncompressed RGB/DIB frames — universal playback, no codec needed.
 
+## Drawing tool improvements (backlog)
+
+### Text tool
+Text editor with font selection, size, style (bold/italic/underline), color, and alignment options. Click-to-place with optional bounding box for wrapping. Should support common system fonts.
+
+### Layer system
+Support multiple layers with ordering, visibility toggles, opacity, and blend modes. Layer panel in the sidebar for reordering (drag or up/down buttons), adding, deleting, merging, and duplicating layers. Each layer is a separate BufferedImage composited on paint.
+
+### Paintbrush tool
+Brush tool with selectable brush tips (round, square, calligraphy/angled, airbrush/soft), configurable size, opacity, and hardness. Smooth stroke interpolation between mouse samples to avoid gaps at fast movement.
+
+### Object model with non-linear delete (shape selection)
+Move from pure raster to a hybrid model where each drawing operation (rectangle, ellipse, line, text, etc.) is recorded as a vector object with its parameters (type, bounds, color, stroke, fill). The canvas composites all objects on repaint. A selection tool allows clicking individual shapes — hit-testing against stored geometry — to select, move, resize, or delete them out of order. This is distinct from linear undo; any shape can be removed at any time and the remaining shapes re-composite. Pairs naturally with the layer system (objects live on layers). Raster operations like pencil/brush strokes and fractals would remain as flat bitmap objects that can be reordered/deleted but not reshaped.
+
 ## Features I’d like to explore when we have more time:
 ### Animations
 *   Iteration animation - add one iteration, display it, add another, etc - up to the point where not many iterations are present anymore. Save the resulting iteration slides as a video which can be played back.
