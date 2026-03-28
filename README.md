@@ -10,8 +10,15 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 - **Pencil, Line, Rectangle, Oval, Eraser, Flood Fill** with configurable stroke size
 - **Color picker**: 20-color palette + custom color chooser, foreground/background colors
 - **Pluggable fill system**: Solid, Gradient, Custom Gradient, Checkerboard, Diagonal Stripes
-- **Undo/Redo**: Up to 50 levels (Ctrl+Z / Ctrl+Y)
+- **Undo/Redo**: Up to 80 levels with automatic compaction (Ctrl+Z / Ctrl+Y)
 - **File I/O**: Open and save PNG, JPG, BMP images
+
+### Layer System
+- **Up to 20 layers** with per-layer opacity, visibility toggle, and lock
+- **8 blend modes**: Normal, Multiply, Screen, Overlay, Soft Light, Hard Light, Difference, Add
+- **Layer panel**: Sidebar with thumbnails, add/delete, duplicate, reorder (up/down), merge down, flatten
+- **Layer operations**: Double-click to rename, checkbox for visibility, lock to prevent edits
+- **Compositing**: Real-time layer compositing with custom blend mode implementation
 
 ### Fractal Explorer
 - **5 fractal types**: Mandelbrot, Julia, Burning Ship, Tricorn, and Magnet Type I — selectable from dropdown and menu
@@ -63,7 +70,7 @@ java -cp out com.seanick80.drawingapp.DrawingApp \
 ## Testing
 
 ```bash
-# Run regression tests (135 assertions covering all render modes and fractal types)
+# Run regression tests (190+ assertions covering rendering, layers, and fractal types)
 ./test.sh       # Unix/Git Bash
 test.cmd        # Windows
 
@@ -88,6 +95,7 @@ Tests cover:
 - Previous-render BigDecimal cache: 25% reuse on 2x zoom, 75% on pan, pixel-identical to from-scratch
 - Shallow zoom quadtree cache: pan reuse verified with correctness checks
 - Zoom animation: keyframe interpolation, frame count, AVI writer round-trip
+- Layer system: creation, properties, opacity clamping, compositing, visibility, blend modes, reorder, duplicate, merge, flatten, clear, thumbnails
 
 ## Benchmarking
 
@@ -122,8 +130,15 @@ data/
 
 src/com/seanick80/drawingapp/
 ├── DrawingApp.java          # Main frame, menus (File, Edit, Fractal)
-├── DrawingCanvas.java       # Canvas with mouse/wheel event routing
+├── DrawingCanvas.java       # Canvas with layer compositing and event routing
 ├── ToolBar.java             # Tool selection and settings panel
+├── UndoManager.java         # Layer-aware undo/redo with compaction
+├── layers/
+│   ├── Layer.java               # Single layer: image + opacity + blend + visibility
+│   ├── LayerManager.java        # Ordered layer list, compositing, max 20 layers
+│   ├── LayerPanel.java          # Sidebar UI: list, controls, opacity slider, blend dropdown
+│   ├── BlendMode.java           # Enum: Normal, Multiply, Screen, Overlay, etc.
+│   └── BlendComposite.java      # Custom AWT Composite for blend mode pixel math
 ├── fills/                   # Pluggable fill providers
 ├── gradient/                # Color gradient editor and interpolation
 ├── fractal/

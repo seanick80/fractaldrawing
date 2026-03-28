@@ -57,6 +57,23 @@ Brush tool with selectable brush tips (round, square, calligraphy/angled, airbru
 ### Object model with non-linear delete (shape selection)
 Move from pure raster to a hybrid model where each drawing operation (rectangle, ellipse, line, text, etc.) is recorded as a vector object with its parameters (type, bounds, color, stroke, fill). The canvas composites all objects on repaint. A selection tool allows clicking individual shapes — hit-testing against stored geometry — to select, move, resize, or delete them out of order. This is distinct from linear undo; any shape can be removed at any time and the remaining shapes re-composite. Pairs naturally with the layer system (objects live on layers). Raster operations like pencil/brush strokes and fractals would remain as flat bitmap objects that can be reordered/deleted but not reshaped.
 
+## UI fit and finish (backlog)
+
+### Detachable, resizable tool panels
+All sidebar panels (drawing toolbar, tool settings, color picker, layer panel) should be dockable/undockable. Users can detach any panel into its own floating window, move it, resize it, and re-dock it. Panels should remember their detached/docked state. Consider using internal frames or a lightweight docking framework.
+
+### File save dialog with format filters
+Save dialog should show named file type filters (PNG, JPEG, BMP, FDP) instead of "All Files". Selecting FDP saves layers + up to 10 undo states; selecting an image format flattens all layers on save.
+
+### Context-sensitive Fractal menu
+The Fractal menu in the menu bar should only be visible/enabled when the Fractal tool is the active tool. Hide or disable it for all other tools to reduce clutter.
+
+### View menu with zoom controls
+Add a View menu with: Zoom In, Zoom Out, Zoom to Fit, Reset Zoom (1:1), and Zoom Rectangle (drag a rect on canvas to zoom into that region). Provides keyboard/menu alternatives to mouse wheel zoom.
+
+### Screensaver mode
+Full-screen mode (via View menu) that cycles through random interesting Mandelbrot locations. Renders each location at screen resolution, displays for a configurable timer (e.g. 10-30 seconds), then smoothly transitions to the next. Exits on any key press or mouse movement. Reuses the "I Feel Lucky" location finder.
+
 ## Features I’d like to explore when we have more time:
 ### Animations
 *   Iteration animation - add one iteration, display it, add another, etc - up to the point where not many iterations are present anymore. Save the resulting iteration slides as a video which can be played back.

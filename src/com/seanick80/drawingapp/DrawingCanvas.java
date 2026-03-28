@@ -1,5 +1,6 @@
 package com.seanick80.drawingapp;
 
+import com.seanick80.drawingapp.layers.LayerManager;
 import com.seanick80.drawingapp.tools.Tool;
 
 import javax.swing.*;
@@ -9,7 +10,8 @@ import java.awt.image.BufferedImage;
 
 public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionListener, MouseWheelListener {
 
-    private BufferedImage image;
+    private BufferedImage image; // composite image for display and save
+    private final LayerManager layerManager;
     private Tool activeTool;
     private StatusBar statusBar;
     private ColorPicker colorPicker;
@@ -24,27 +26,39 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
 
     public DrawingCanvas(int width, int height, UndoManager undoManager) {
         this.undoManager = undoManager;
+        this.layerManager = new LayerManager(width, height);
         setPreferredSize(new Dimension(width, height));
-        newImage(width, height);
+        compositeImage();
         addMouseListener(this);
         addMouseMotionListener(this);
         addMouseWheelListener(this);
         setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
     }
 
+    /** Composite all layers into the display image. */
+    private void compositeImage() {
+        image = layerManager.composite();
+    }
+
+    public LayerManager getLayerManager() {
+        return layerManager;
+    }
+
     public void newImage(int width, int height) {
-        image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-        clearCanvas();
+        layerManager.resizeAll(width, height);
+        compositeImage();
         setPreferredSize(new Dimension(width, height));
         revalidate();
         undoManager.clear();
     }
 
     public void loadImage(BufferedImage img) {
-        image = new BufferedImage(img.getWidth(), img.getHeight(), BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = image.createGraphics();
+        layerManager.resizeAll(img.getWidth(), img.getHeight());
+        // Draw loaded image onto the background layer
+        Graphics2D g = layerManager.getLayer(0).getImage().createGraphics();
         g.drawImage(img, 0, 0, null);
         g.dispose();
+        compositeImage();
         setPreferredSize(new Dimension(img.getWidth(), img.getHeight()));
         revalidate();
         repaint();
@@ -52,15 +66,19 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     }
 
     public void clearCanvas() {
-        Graphics2D g = image.createGraphics();
-        g.setColor(Color.WHITE);
-        g.fillRect(0, 0, image.getWidth(), image.getHeight());
-        g.dispose();
+        layerManager.getActiveLayer().fill(Color.WHITE);
+        compositeImage();
         repaint();
     }
 
+    /** Returns the composite (flattened) image for saving and display. */
     public BufferedImage getImage() {
         return image;
+    }
+
+    /** Returns the active layer's image for tools to draw on. */
+    public BufferedImage getActiveLayerImage() {
+        return layerManager.getActiveLayer().getImage();
     }
 
     public void setActiveTool(Tool tool) {
@@ -88,7 +106,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     }
 
     public void saveUndoState() {
-        undoManager.saveState(image);
+        undoManager.saveState(layerManager);
     }
 
     public void setPanOffset(int dx, int dy) {
@@ -105,31 +123,20 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         repaint();
     }
 
-    /**
-     * Zoom the view centered on the given screen coordinates.
-     * Adjusts viewPanX/Y so the image point under the cursor stays fixed.
-     */
     private void applyViewZoom(int screenX, int screenY, double factor) {
-        // Image point under cursor before zoom
         double imgX = (screenX - viewPanX) / viewZoom;
         double imgY = (screenY - viewPanY) / viewZoom;
-
         viewZoom *= factor;
         viewZoom = Math.max(0.25, Math.min(viewZoom, 32.0));
-
-        // Adjust pan so the same image point stays under the cursor
         viewPanX = screenX - imgX * viewZoom;
         viewPanY = screenY - imgY * viewZoom;
-
         repaint();
     }
 
-    /** Convert screen X to image X accounting for view zoom and pan. */
     private int toImageX(int screenX) {
         return (int) ((screenX - viewPanX) / viewZoom);
     }
 
-    /** Convert screen Y to image Y accounting for view zoom and pan. */
     private int toImageY(int screenY) {
         return (int) ((screenY - viewPanY) / viewZoom);
     }
@@ -139,13 +146,14 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         super.paintComponent(g);
         Graphics2D g2 = (Graphics2D) g;
 
+        // Recomposite before painting
+        compositeImage();
+
         if (panOffsetX != 0 || panOffsetY != 0) {
-            // During fractal pan: fill background black, draw image shifted
             g2.setColor(Color.BLACK);
             g2.fillRect(0, 0, getWidth(), getHeight());
             g2.drawImage(image, panOffsetX, panOffsetY, null);
         } else if (viewZoom != 1.0 || viewPanX != 0 || viewPanY != 0) {
-            // View zoom: apply transform
             g2.setColor(Color.DARK_GRAY);
             g2.fillRect(0, 0, getWidth(), getHeight());
             g2.translate(viewPanX, viewPanY);
@@ -170,12 +178,14 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     public void mousePressed(MouseEvent e) {
         int imgX = toImageX(e.getX());
         int imgY = toImageY(e.getY());
-        if (activeTool != null && imgX >= 0 && imgX < image.getWidth()
-                && imgY >= 0 && imgY < image.getHeight()) {
+        BufferedImage layerImg = getActiveLayerImage();
+        if (activeTool != null && imgX >= 0 && imgX < layerImg.getWidth()
+                && imgY >= 0 && imgY < layerImg.getHeight()) {
+            if (layerManager.getActiveLayer().isLocked()) return;
             lastMouseButton = e.getButton();
             saveUndoState();
             drawing = true;
-            activeTool.mousePressed(image, imgX, imgY, this);
+            activeTool.mousePressed(layerImg, imgX, imgY, this);
             repaint();
         }
     }
@@ -184,7 +194,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     public void mouseReleased(MouseEvent e) {
         if (activeTool != null && drawing) {
             drawing = false;
-            activeTool.mouseReleased(image, toImageX(e.getX()), toImageY(e.getY()), this);
+            activeTool.mouseReleased(getActiveLayerImage(), toImageX(e.getX()), toImageY(e.getY()), this);
             repaint();
         }
     }
@@ -192,7 +202,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     @Override
     public void mouseDragged(MouseEvent e) {
         if (activeTool != null && drawing) {
-            activeTool.mouseDragged(image, toImageX(e.getX()), toImageY(e.getY()), this);
+            activeTool.mouseDragged(getActiveLayerImage(), toImageX(e.getX()), toImageY(e.getY()), this);
             repaint();
         }
         updateStatus(e);
@@ -206,17 +216,16 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     @Override
     public void mouseWheelMoved(MouseWheelEvent e) {
         if (e.isControlDown()) {
-            // Ctrl+scroll: fractal zoom (delegate to tool with image-space coords)
             int imgX = toImageX(e.getX());
             int imgY = toImageY(e.getY());
-            if (activeTool != null && imgX >= 0 && imgX < image.getWidth()
-                    && imgY >= 0 && imgY < image.getHeight()) {
+            BufferedImage layerImg = getActiveLayerImage();
+            if (activeTool != null && imgX >= 0 && imgX < layerImg.getWidth()
+                    && imgY >= 0 && imgY < layerImg.getHeight()) {
                 saveUndoState();
-                activeTool.mouseWheelMoved(image, imgX, imgY, e.getWheelRotation(), this);
+                activeTool.mouseWheelMoved(layerImg, imgX, imgY, e.getWheelRotation(), this);
                 repaint();
             }
         } else {
-            // Plain scroll: image view zoom (canvas handles, no re-render)
             double factor = (e.getWheelRotation() < 0) ? 1.25 : 0.8;
             applyViewZoom(e.getX(), e.getY(), factor);
         }
@@ -228,15 +237,11 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         if (statusBar != null) statusBar.clearCoordinates();
     }
 
-    private boolean inBounds(MouseEvent e) {
-        return e.getX() >= 0 && e.getX() < image.getWidth()
-            && e.getY() >= 0 && e.getY() < image.getHeight();
-    }
-
     private void updateStatus(MouseEvent e) {
         if (statusBar != null) {
             statusBar.setCoordinates(toImageX(e.getX()), toImageY(e.getY()));
-            statusBar.setCanvasSize(image.getWidth(), image.getHeight());
+            BufferedImage layerImg = getActiveLayerImage();
+            statusBar.setCanvasSize(layerImg.getWidth(), layerImg.getHeight());
         }
     }
 }

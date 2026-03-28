@@ -4,6 +4,8 @@ import com.seanick80.drawingapp.fills.*;
 import com.seanick80.drawingapp.fractal.FractalRenderer;
 import com.seanick80.drawingapp.fractal.FractalType;
 import com.seanick80.drawingapp.fractal.FractalTypeRegistry;
+import com.seanick80.drawingapp.layers.LayerManager;
+import com.seanick80.drawingapp.layers.LayerPanel;
 import com.seanick80.drawingapp.tools.*;
 
 import javax.swing.*;
@@ -22,12 +24,13 @@ public class DrawingApp extends JFrame {
     private final StatusBar statusBar;
     private final FillRegistry fillRegistry;
     private final UndoManager undoManager;
+    private final LayerPanel layerPanel;
 
     public DrawingApp() {
         super("Drawing App");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
 
-        undoManager = new UndoManager(50);
+        undoManager = new UndoManager(80);
         fillRegistry = new FillRegistry();
         registerDefaultFills();
 
@@ -35,6 +38,7 @@ public class DrawingApp extends JFrame {
         toolBar = new ToolBar(canvas, fillRegistry);
         colorPicker = new ColorPicker(canvas);
         statusBar = new StatusBar();
+        layerPanel = new LayerPanel(canvas.getLayerManager(), canvas::repaint);
 
         canvas.setStatusBar(statusBar);
         canvas.setColorPicker(colorPicker);
@@ -42,9 +46,15 @@ public class DrawingApp extends JFrame {
 
         setJMenuBar(createMenuBar());
 
+        // Left panel: tools on top, color picker below
         JPanel leftPanel = new JPanel(new BorderLayout());
         leftPanel.add(toolBar, BorderLayout.NORTH);
         leftPanel.add(colorPicker, BorderLayout.SOUTH);
+
+        // Right panel: layers
+        JPanel rightPanel = new JPanel(new BorderLayout());
+        rightPanel.add(layerPanel, BorderLayout.NORTH);
+        rightPanel.setPreferredSize(new Dimension(170, 0));
 
         JScrollPane scrollPane = new JScrollPane(canvas);
         scrollPane.getViewport().setBackground(Color.GRAY);
@@ -52,10 +62,11 @@ public class DrawingApp extends JFrame {
         setLayout(new BorderLayout());
         add(leftPanel, BorderLayout.WEST);
         add(scrollPane, BorderLayout.CENTER);
+        add(rightPanel, BorderLayout.EAST);
         add(statusBar, BorderLayout.SOUTH);
 
         pack();
-        setSize(1024, 768);
+        setSize(1200, 768);
         setLocationRelativeTo(null);
     }
 
@@ -100,14 +111,14 @@ public class DrawingApp extends JFrame {
         JMenuItem undoItem = new JMenuItem("Undo");
         undoItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK));
         undoItem.addActionListener(e -> {
-            undoManager.undo(canvas.getImage());
+            undoManager.undo(canvas.getLayerManager());
             canvas.repaint();
         });
 
         JMenuItem redoItem = new JMenuItem("Redo");
         redoItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK));
         redoItem.addActionListener(e -> {
-            undoManager.redo(canvas.getImage());
+            undoManager.redo(canvas.getLayerManager());
             canvas.repaint();
         });
 
@@ -137,15 +148,13 @@ public class DrawingApp extends JFrame {
         FractalTool ft = getFractalTool();
         if (ft == null) return;
         action.accept(ft);
-        // Trigger render if fractal tool is active and canvas is available
-        ft.onActivated(canvas.getImage(), canvas);
+        ft.onActivated(canvas.getActiveLayerImage(), canvas);
     }
 
     private JMenu createFractalMenu() {
         JMenu menu = new JMenu("Fractal");
         menu.setMnemonic('R');
 
-        // --- Fractal Type (dynamically populated from registry) ---
         JMenu typeMenu = new JMenu("Type");
         ButtonGroup typeGroup = new ButtonGroup();
         boolean first = true;
@@ -162,7 +171,6 @@ public class DrawingApp extends JFrame {
         }
         menu.add(typeMenu);
 
-        // --- Color Mode ---
         JMenu colorMenu = new JMenu("Coloring");
         ButtonGroup colorGroup = new ButtonGroup();
         JRadioButtonMenuItem modItem = new JRadioButtonMenuItem("Mod (cyclic)", true);
@@ -179,7 +187,6 @@ public class DrawingApp extends JFrame {
         colorMenu.add(divItem);
         menu.add(colorMenu);
 
-        // --- Interior Pruning ---
         JCheckBoxMenuItem pruningItem = new JCheckBoxMenuItem("Interior Pruning", true);
         pruningItem.addActionListener(e -> applyFractalAndRender(ft ->
             ft.getRenderer().setInteriorPruning(pruningItem.isSelected())));
@@ -199,7 +206,6 @@ public class DrawingApp extends JFrame {
 
         menu.addSeparator();
 
-        // --- Preset Locations ---
         JMenu presetsMenu = new JMenu("Locations");
 
         addPreset(presetsMenu, "Full Mandelbrot", FractalType.MANDELBROT,
@@ -238,7 +244,6 @@ public class DrawingApp extends JFrame {
 
         menu.add(presetsMenu);
 
-        // --- Saved Locations (loaded from data/locations directory) ---
         File locDir = FractalTool.getDefaultLocationDirectory();
         if (locDir != null && locDir.isDirectory()) {
             File[] jsonFiles = locDir.listFiles((dir, name) ->
@@ -322,7 +327,9 @@ public class DrawingApp extends JFrame {
                 if (name.endsWith(".jpg") || name.endsWith(".jpeg")) format = "jpg";
                 else if (name.endsWith(".bmp")) format = "bmp";
                 else if (!name.endsWith(".png")) file = new File(file.getPath() + ".png");
-                ImageIO.write(canvas.getImage(), format, file);
+                // Flatten all layers for image export
+                BufferedImage flat = canvas.getLayerManager().composite();
+                ImageIO.write(flat, format, file);
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Failed to save image: " + ex.getMessage());
             }
@@ -333,7 +340,6 @@ public class DrawingApp extends JFrame {
         File gradientDir = null;
         File locationDir = null;
 
-        // Parse command-line arguments
         for (int i = 0; i < args.length; i++) {
             if ("--gradient-dir".equals(args[i]) && i + 1 < args.length) {
                 gradientDir = new File(args[++i]);
@@ -342,7 +348,6 @@ public class DrawingApp extends JFrame {
             }
         }
 
-        // Auto-detect data/ directory relative to the classpath or working directory
         if (gradientDir == null || locationDir == null) {
             File dataDir = findDataDir();
             if (dataDir != null) {
@@ -372,13 +377,7 @@ public class DrawingApp extends JFrame {
         });
     }
 
-    /**
-     * Find the data/ directory by searching upward from the classpath root
-     * or working directory. Handles both development (running from out/)
-     * and typical clone layouts.
-     */
     private static File findDataDir() {
-        // Try from classpath: out/ is typically at <project>/out, data/ at <project>/data
         String classpath = System.getProperty("java.class.path", "");
         for (String entry : classpath.split(File.pathSeparator)) {
             File cpDir = new File(entry);
@@ -387,7 +386,6 @@ public class DrawingApp extends JFrame {
                 if (data.isDirectory()) return data;
             }
         }
-        // Try from working directory
         File data = new File("data");
         if (data.isDirectory()) return data;
         return null;

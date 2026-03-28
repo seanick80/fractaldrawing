@@ -86,6 +86,9 @@ public class FractalRenderTest {
         // 3D terrain tests
         testTerrainRenderer();
 
+        // Layer system tests
+        testLayerSystem();
+
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
         if (failed > 0) {
@@ -1617,6 +1620,171 @@ public class FractalRenderTest {
         int[] size = r.getLastRenderSize();
         check("renderer exposes iteration data", iters != null && iters.length == 2500);
         check("renderer exposes render size", size[0] == 50 && size[1] == 50);
+    }
+
+    private static void testLayerSystem() {
+        System.out.println("  -- Layer system --");
+
+        // Basic layer manager creation
+        var lm = new com.seanick80.drawingapp.layers.LayerManager(100, 80);
+        check("layer manager starts with 1 layer", lm.getLayerCount() == 1);
+        check("initial layer is Background", "Background".equals(lm.getLayer(0).getName()));
+        check("active index is 0", lm.getActiveIndex() == 0);
+
+        // Background layer is white (opaque)
+        var bgImg = lm.getLayer(0).getImage();
+        int centerPixel = bgImg.getRGB(50, 40);
+        check("background layer is white", centerPixel == 0xFFFFFFFF);
+
+        // Add layers
+        var layer2 = lm.addLayer();
+        check("add layer returns non-null", layer2 != null);
+        check("layer count is 2", lm.getLayerCount() == 2);
+        check("active index moves to new layer", lm.getActiveIndex() == 1);
+        check("new layer is transparent", (layer2.getImage().getRGB(0, 0) & 0xFF000000) == 0);
+
+        var layer3 = lm.addLayer();
+        check("layer count is 3", lm.getLayerCount() == 3);
+
+        // Max layers
+        for (int i = lm.getLayerCount(); i < com.seanick80.drawingapp.layers.LayerManager.MAX_LAYERS; i++) {
+            lm.addLayer();
+        }
+        check("at max layer count", lm.getLayerCount() == com.seanick80.drawingapp.layers.LayerManager.MAX_LAYERS);
+        check("add beyond max returns null", lm.addLayer() == null);
+
+        // Reset for further tests
+        lm = new com.seanick80.drawingapp.layers.LayerManager(100, 80);
+
+        // Layer properties
+        var layer = lm.getLayer(0);
+        check("default opacity is 1.0", layer.getOpacity() == 1.0f);
+        check("default blend mode is NORMAL",
+            layer.getBlendMode() == com.seanick80.drawingapp.layers.BlendMode.NORMAL);
+        check("default visible is true", layer.isVisible());
+        check("default locked is false", !layer.isLocked());
+
+        layer.setOpacity(0.5f);
+        check("opacity set to 0.5", layer.getOpacity() == 0.5f);
+        layer.setOpacity(1.5f); // clamp
+        check("opacity clamped to 1.0", layer.getOpacity() == 1.0f);
+        layer.setOpacity(-0.5f);
+        check("opacity clamped to 0.0", layer.getOpacity() == 0.0f);
+        layer.setOpacity(1.0f);
+
+        // Compositing: two layers, top layer with red rectangle
+        lm.addLayer();
+        var topLayer = lm.getActiveLayer();
+        java.awt.Graphics2D g = topLayer.getImage().createGraphics();
+        g.setColor(java.awt.Color.RED);
+        g.fillRect(10, 10, 30, 30);
+        g.dispose();
+
+        var composite = lm.composite();
+        check("composite image size matches", composite.getWidth() == 100 && composite.getHeight() == 80);
+        int redPixel = composite.getRGB(20, 20);
+        check("composite shows red from top layer", (redPixel & 0x00FF0000) == 0x00FF0000);
+        int whitePixel = composite.getRGB(5, 5);
+        check("composite shows white from background", whitePixel == 0xFFFFFFFF);
+
+        // Visibility toggle
+        topLayer.setVisible(false);
+        var composite2 = lm.composite();
+        int hiddenPixel = composite2.getRGB(20, 20);
+        check("hidden layer not composited", hiddenPixel == 0xFFFFFFFF);
+        topLayer.setVisible(true);
+
+        // Opacity compositing
+        topLayer.setOpacity(0.5f);
+        var composite3 = lm.composite();
+        int blendedPixel = composite3.getRGB(20, 20);
+        int blendedR = (blendedPixel >> 16) & 0xFF;
+        int blendedG = (blendedPixel >> 8) & 0xFF;
+        check("50% opacity red over white blends", blendedR > 200 && blendedG > 100 && blendedG < 160);
+        topLayer.setOpacity(1.0f);
+
+        // Move layer up/down
+        lm.setActiveIndex(0);
+        int origCount = lm.getLayerCount();
+        lm.moveLayerUp(0);
+        check("move up swaps layers", lm.getActiveIndex() == 1);
+        check("layer count unchanged after move", lm.getLayerCount() == origCount);
+        lm.moveLayerDown(1);
+        check("move down swaps back", lm.getActiveIndex() == 0);
+
+        // Cannot remove last layer
+        lm.removeLayer(1);
+        check("removed layer 1", lm.getLayerCount() == 1);
+        lm.removeLayer(0);
+        check("cannot remove last layer", lm.getLayerCount() == 1);
+
+        // Duplicate
+        lm.addLayer();
+        g = lm.getActiveLayer().getImage().createGraphics();
+        g.setColor(java.awt.Color.BLUE);
+        g.fillRect(0, 0, 100, 80);
+        g.dispose();
+        int beforeCount = lm.getLayerCount();
+        var dup = lm.duplicateLayer(lm.getActiveIndex());
+        check("duplicate increases count", lm.getLayerCount() == beforeCount + 1);
+        int dupPixel = dup.getImage().getRGB(50, 40);
+        check("duplicate has same content", (dupPixel & 0x000000FF) == 0xFF);
+
+        // Merge down
+        lm = new com.seanick80.drawingapp.layers.LayerManager(100, 80);
+        lm.addLayer();
+        g = lm.getActiveLayer().getImage().createGraphics();
+        g.setColor(java.awt.Color.GREEN);
+        g.fillRect(40, 30, 20, 20);
+        g.dispose();
+        lm.mergeDown(1);
+        check("merge reduces layer count", lm.getLayerCount() == 1);
+        int mergedPixel = lm.getLayer(0).getImage().getRGB(50, 40);
+        int mergedG = (mergedPixel >> 8) & 0xFF;
+        check("merged layer has green content", mergedG == 255 || mergedG == 0x80);
+
+        // Flatten
+        lm.addLayer();
+        lm.addLayer();
+        check("3 layers before flatten", lm.getLayerCount() == 3);
+        lm.flattenAll();
+        check("flatten to 1 layer", lm.getLayerCount() == 1);
+
+        // Blend modes exist
+        var modes = com.seanick80.drawingapp.layers.BlendMode.values();
+        check("8 blend modes defined", modes.length == 8);
+        check("NORMAL has display name", "Normal".equals(modes[0].getDisplayName()));
+
+        // BlendComposite: multiply darkens
+        var bc = new com.seanick80.drawingapp.layers.BlendComposite(
+            com.seanick80.drawingapp.layers.BlendMode.MULTIPLY, 1.0f);
+        var baseImg = new java.awt.image.BufferedImage(10, 10, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        var g2 = baseImg.createGraphics();
+        g2.setColor(java.awt.Color.WHITE);
+        g2.fillRect(0, 0, 10, 10);
+        g2.setComposite(bc);
+        g2.setColor(new java.awt.Color(128, 128, 128));
+        g2.fillRect(0, 0, 10, 10);
+        g2.dispose();
+        int mp = baseImg.getRGB(5, 5);
+        int mr = (mp >> 16) & 0xFF;
+        check("multiply blend darkens", mr < 200 && mr > 30);
+
+        // Layer clear makes transparent
+        var clearLm = new com.seanick80.drawingapp.layers.LayerManager(50, 50);
+        clearLm.addLayer();
+        var clearLayer = clearLm.getActiveLayer();
+        g = clearLayer.getImage().createGraphics();
+        g.setColor(java.awt.Color.RED);
+        g.fillRect(0, 0, 50, 50);
+        g.dispose();
+        clearLayer.clear();
+        check("cleared layer is transparent", (clearLayer.getImage().getRGB(25, 25) & 0xFF000000) == 0);
+
+        // Thumbnail generation
+        var thumbLm = new com.seanick80.drawingapp.layers.LayerManager(200, 150);
+        var thumb = thumbLm.getLayer(0).createThumbnail(40, 30);
+        check("thumbnail correct size", thumb.getWidth() == 40 && thumb.getHeight() == 30);
     }
 
     private static void check(String name, boolean condition) {

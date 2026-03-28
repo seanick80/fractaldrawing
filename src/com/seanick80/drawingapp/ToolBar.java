@@ -341,7 +341,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
             refreshSettingsPanel();
             applyStrokeSize();
             applyFillSettings();
-            tool.onActivated(canvas.getImage(), canvas);
+            tool.onActivated(canvas.getActiveLayerImage(), canvas);
         });
         panel.add(btn);
         if (selected) {
