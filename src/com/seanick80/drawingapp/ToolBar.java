@@ -19,6 +19,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
     private Tool activeTool;
     private final ButtonGroup toolGroup = new ButtonGroup();
     private final FillRegistry fillRegistry;
+    private java.util.function.BiConsumer<Tool, Tool> toolChangeListener;
 
     // Reusable settings components
     private final JSpinner strokeSpinner;
@@ -321,6 +322,10 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
 
     // --- Tool management ---
 
+    public void setToolChangeListener(java.util.function.BiConsumer<Tool, Tool> listener) {
+        this.toolChangeListener = listener;
+    }
+
     private void addTool(JPanel panel, Tool tool, boolean selected) {
         tools.put(tool.getName(), tool);
         JToggleButton btn = new JToggleButton(tool.getName());
@@ -328,11 +333,10 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         btn.setMargin(new Insets(4, 2, 4, 2));
         toolGroup.add(btn);
         btn.addActionListener(e -> {
+            Tool oldTool = activeTool;
             if (activeTool != null) {
                 toolSizes.put(activeTool.getName(), (int) strokeSpinner.getValue());
-                if (activeTool instanceof com.seanick80.drawingapp.tools.FractalTool ft) {
-                    ft.onDeactivated();
-                }
+                activeTool.onDeactivated();
             }
             activeTool = tool;
             canvas.setActiveTool(tool);
@@ -342,6 +346,9 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
             applyStrokeSize();
             applyFillSettings();
             tool.onActivated(canvas.getActiveLayerImage(), canvas);
+            if (toolChangeListener != null) {
+                toolChangeListener.accept(oldTool, tool);
+            }
         });
         panel.add(btn);
         if (selected) {

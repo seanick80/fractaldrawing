@@ -1,9 +1,6 @@
 package com.seanick80.drawingapp;
 
 import com.seanick80.drawingapp.fills.*;
-import com.seanick80.drawingapp.fractal.FractalRenderer;
-import com.seanick80.drawingapp.fractal.FractalType;
-import com.seanick80.drawingapp.fractal.FractalTypeRegistry;
 import com.seanick80.drawingapp.layers.LayerManager;
 import com.seanick80.drawingapp.layers.LayerPanel;
 import com.seanick80.drawingapp.tools.*;
@@ -13,7 +10,6 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.math.BigDecimal;
 import javax.imageio.ImageIO;
 
 public class DrawingApp extends JFrame {
@@ -25,6 +21,7 @@ public class DrawingApp extends JFrame {
     private final FillRegistry fillRegistry;
     private final UndoManager undoManager;
     private final LayerPanel layerPanel;
+    private JMenu activeToolMenu;
 
     public DrawingApp() {
         super("Drawing App");
@@ -43,6 +40,7 @@ public class DrawingApp extends JFrame {
         canvas.setStatusBar(statusBar);
         canvas.setColorPicker(colorPicker);
         canvas.setActiveTool(toolBar.getActiveTool());
+        toolBar.setToolChangeListener(this::onToolChanged);
 
         setJMenuBar(createMenuBar());
 
@@ -135,159 +133,22 @@ public class DrawingApp extends JFrame {
 
         menuBar.add(fileMenu);
         menuBar.add(editMenu);
-        menuBar.add(createFractalMenu());
         return menuBar;
     }
 
-    private FractalTool getFractalTool() {
-        Tool t = toolBar.getTool("Fractal");
-        return (t instanceof FractalTool) ? (FractalTool) t : null;
-    }
-
-    private void applyFractalAndRender(java.util.function.Consumer<FractalTool> action) {
-        FractalTool ft = getFractalTool();
-        if (ft == null) return;
-        action.accept(ft);
-        ft.onActivated(canvas.getActiveLayerImage(), canvas);
-    }
-
-    private JMenu createFractalMenu() {
-        JMenu menu = new JMenu("Fractal");
-        menu.setMnemonic('R');
-
-        JMenu typeMenu = new JMenu("Type");
-        ButtonGroup typeGroup = new ButtonGroup();
-        boolean first = true;
-        for (FractalType ft : FractalTypeRegistry.getDefault().getAll()) {
-            String displayName = formatTypeName(ft.name());
-            JRadioButtonMenuItem item = new JRadioButtonMenuItem(displayName, first);
-            first = false;
-            typeGroup.add(item);
-            item.addActionListener(e -> applyFractalAndRender(tool -> {
-                tool.getRenderer().setType(ft);
-                tool.getRenderer().setBounds(-2, 2, -2, 2);
-            }));
-            typeMenu.add(item);
+    private void onToolChanged(Tool oldTool, Tool newTool) {
+        JMenuBar menuBar = getJMenuBar();
+        if (activeToolMenu != null) {
+            menuBar.remove(activeToolMenu);
+            activeToolMenu = null;
         }
-        menu.add(typeMenu);
-
-        JMenu colorMenu = new JMenu("Coloring");
-        ButtonGroup colorGroup = new ButtonGroup();
-        JRadioButtonMenuItem modItem = new JRadioButtonMenuItem("Mod (cyclic)", true);
-        JRadioButtonMenuItem divItem = new JRadioButtonMenuItem("Division (linear)");
-        colorGroup.add(modItem);
-        colorGroup.add(divItem);
-
-        modItem.addActionListener(e -> applyFractalAndRender(ft ->
-            ft.getRenderer().setColorMode(FractalRenderer.ColorMode.MOD)));
-        divItem.addActionListener(e -> applyFractalAndRender(ft ->
-            ft.getRenderer().setColorMode(FractalRenderer.ColorMode.DIVISION)));
-
-        colorMenu.add(modItem);
-        colorMenu.add(divItem);
-        menu.add(colorMenu);
-
-        JCheckBoxMenuItem pruningItem = new JCheckBoxMenuItem("Interior Pruning", true);
-        pruningItem.addActionListener(e -> applyFractalAndRender(ft ->
-            ft.getRenderer().setInteriorPruning(pruningItem.isSelected())));
-        menu.add(pruningItem);
-
-        menu.addSeparator();
-
-        JMenuItem flyoverItem = new JMenuItem("3D Flyover");
-        flyoverItem.addActionListener(e -> {
-            FractalTool ft = getFractalTool();
-            if (ft != null) {
-                com.seanick80.drawingapp.fractal.TerrainViewer.openFromRenderer(
-                        ft.getRenderer(), ft.getGradient());
-            }
-        });
-        menu.add(flyoverItem);
-
-        menu.addSeparator();
-
-        JMenu presetsMenu = new JMenu("Locations");
-
-        addPreset(presetsMenu, "Full Mandelbrot", FractalType.MANDELBROT,
-            "-2", "2", "-2", "2", 256);
-        addPreset(presetsMenu, "Full Julia", FractalType.JULIA,
-            "-2", "2", "-2", "2", 256);
-
-        presetsMenu.addSeparator();
-
-        addPreset(presetsMenu, "Seahorse Valley", FractalType.MANDELBROT,
-            "-0.7516", "-0.7346", "0.0534", "0.0661", 256);
-        addPreset(presetsMenu, "Mini Mandelbrot", FractalType.MANDELBROT,
-            "-1.7692", "-1.7642", "-0.0025", "0.0025", 512);
-        addPreset(presetsMenu, "Elephant Valley", FractalType.MANDELBROT,
-            "0.2501", "0.2601", "-0.0050", "0.0050", 512);
-        addPreset(presetsMenu, "Lightning", FractalType.MANDELBROT,
-            "-1.9855", "-1.9775", "-0.0010", "0.0010", 1024);
-
-        presetsMenu.addSeparator();
-
-        addPreset(presetsMenu, "Deep Zoom (1e13)", FractalType.MANDELBROT,
-            "-0.6596578041282916240699130664224003",
-            "-0.6596578041281954277657226502133863",
-            "-0.4505474984324947231692017068002755",
-            "-0.4505474984323985268650112905912615", 456);
-        addPreset(presetsMenu, "Deeper Zoom (1e17)", FractalType.MANDELBROT,
-            "-0.65965780412826339954936433105672396103",
-            "-0.65965780412826338780665141718755782163",
-            "-0.45054749843244648813621629936085526501",
-            "-0.45054749843244647639350338549168912561", 706);
-        addPreset(presetsMenu, "Deepest Zoom (1e18)", FractalType.MANDELBROT,
-            "-0.659657804128263429441678542563321007371",
-            "-0.659657804128263427973839428329675239951",
-            "-0.450547498432446486027726571727316188813",
-            "-0.450547498432446484559887457493670421393", 506);
-
-        menu.add(presetsMenu);
-
-        File locDir = FractalTool.getDefaultLocationDirectory();
-        if (locDir != null && locDir.isDirectory()) {
-            File[] jsonFiles = locDir.listFiles((dir, name) ->
-                    name.toLowerCase().endsWith(".json"));
-            if (jsonFiles != null && jsonFiles.length > 0) {
-                JMenu savedMenu = new JMenu("Saved Locations");
-                java.util.Arrays.sort(jsonFiles, (a, b) ->
-                        a.getName().compareToIgnoreCase(b.getName()));
-                for (File jsonFile : jsonFiles) {
-                    String label = jsonFile.getName().replaceFirst("\\.json$", "")
-                            .replace('_', ' ');
-                    JMenuItem item = new JMenuItem(label);
-                    item.addActionListener(e -> applyFractalAndRender(ft ->
-                            ft.loadLocationFile(jsonFile)));
-                    savedMenu.add(item);
-                }
-                menu.add(savedMenu);
-            }
+        JMenu toolMenu = newTool.getMenu();
+        if (toolMenu != null) {
+            menuBar.add(toolMenu);
+            activeToolMenu = toolMenu;
         }
-
-        return menu;
-    }
-
-    private static String formatTypeName(String registryName) {
-        String[] parts = registryName.split("_");
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            if (sb.length() > 0) sb.append(' ');
-            sb.append(part.substring(0, 1)).append(part.substring(1).toLowerCase());
-        }
-        return sb.toString();
-    }
-
-    private void addPreset(JMenu menu, String name, FractalType type,
-                           String minR, String maxR, String minI, String maxI, int iterations) {
-        JMenuItem item = new JMenuItem(name);
-        item.addActionListener(e -> applyFractalAndRender(ft -> {
-            ft.getRenderer().setType(type);
-            ft.getRenderer().setBounds(
-                new BigDecimal(minR), new BigDecimal(maxR),
-                new BigDecimal(minI), new BigDecimal(maxI));
-            ft.getRenderer().setMaxIterations(iterations);
-        }));
-        menu.add(item);
+        menuBar.revalidate();
+        menuBar.repaint();
     }
 
     private void newImage() {

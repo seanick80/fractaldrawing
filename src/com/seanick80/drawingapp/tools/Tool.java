@@ -1,6 +1,7 @@
 package com.seanick80.drawingapp.tools;
 
 import com.seanick80.drawingapp.DrawingCanvas;
+import javax.swing.JMenu;
 import javax.swing.JPanel;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
@@ -17,6 +18,12 @@ public interface Tool {
 
     /** Called when this tool becomes the active tool. */
     default void onActivated(BufferedImage image, DrawingCanvas canvas) {}
+
+    /** Called when the tool is deactivated (another tool is selected). */
+    default void onDeactivated() {}
+
+    /** Returns a JMenu to add to the menu bar when this tool is active, or null. */
+    default JMenu getMenu() { return null; }
 
     /** Default stroke size for this tool. */
     default int getDefaultStrokeSize() { return 2; }

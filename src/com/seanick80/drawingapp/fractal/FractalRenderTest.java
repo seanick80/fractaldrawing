@@ -1,10 +1,17 @@
 package com.seanick80.drawingapp.fractal;
 
+import com.seanick80.drawingapp.UndoManager;
+import com.seanick80.drawingapp.fills.*;
 import com.seanick80.drawingapp.gradient.ColorGradient;
+import com.seanick80.drawingapp.layers.BlendComposite;
+import com.seanick80.drawingapp.layers.BlendMode;
+import com.seanick80.drawingapp.layers.Layer;
+import com.seanick80.drawingapp.layers.LayerManager;
 
-import java.awt.Color;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.RandomAccessFile;
 import java.math.BigDecimal;
 
 /**
@@ -88,6 +95,41 @@ public class FractalRenderTest {
 
         // Layer system tests
         testLayerSystem();
+
+        // Fill system tests
+        testFillRegistry();
+        testSolidFill();
+        testGradientFill();
+        testCustomGradientFill();
+        testCheckerboardFill();
+        testDiagonalStripeFill();
+
+        // ColorGradient tests
+        testColorGradientInterpolation();
+        testColorGradientAddRemoveStops();
+        testColorGradientFromBaseColor();
+        testColorGradientSaveLoad();
+        testColorGradientCopyConstructor();
+
+        // UndoManager tests
+        testUndoManagerBasic();
+        testUndoManagerRedoClearedOnNewState();
+        testUndoManagerCompaction();
+        testUndoManagerMultiLayer();
+
+        // AviWriter tests
+        testAviWriterCreatesValidFile();
+        testAviWriterMultipleFrames();
+
+        // BlendComposite all modes tests
+        testBlendCompositeAllModes();
+
+        // FractalJsonUtil edge cases
+        testJsonParseEdgeCases();
+
+        // QuadTree extended tests
+        testQuadTreeLookupFull();
+        testQuadTreeLargeScale();
 
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
@@ -1785,6 +1827,605 @@ public class FractalRenderTest {
         var thumbLm = new com.seanick80.drawingapp.layers.LayerManager(200, 150);
         var thumb = thumbLm.getLayer(0).createThumbnail(40, 30);
         check("thumbnail correct size", thumb.getWidth() == 40 && thumb.getHeight() == 30);
+    }
+
+    // === Fill System Tests ===
+
+    private static void testFillRegistry() {
+        System.out.println("\n  -- Fill System --");
+        FillRegistry reg = new FillRegistry();
+        check("empty registry getAll is empty", reg.getAll().isEmpty());
+
+        SolidFill solid = new SolidFill();
+        GradientFill grad = new GradientFill();
+        CheckerboardFill checker = new CheckerboardFill();
+        reg.register(solid);
+        reg.register(grad);
+        reg.register(checker);
+
+        check("registry has 3 fills", reg.getAll().size() == 3);
+        check("getByName Solid", reg.getByName("Solid") == solid);
+        check("getByName Gradient", reg.getByName("Gradient") == grad);
+        check("getByName Checkerboard", reg.getByName("Checkerboard") == checker);
+        check("getByName unknown returns first", reg.getByName("Nonexistent") == solid);
+    }
+
+    private static void testSolidFill() {
+        SolidFill fill = new SolidFill();
+        check("solid fill name", "Solid".equals(fill.getName()));
+        Paint p = fill.createPaint(Color.RED, 0, 0, 100, 100);
+        check("solid fill returns base color", p.equals(Color.RED));
+        Paint p2 = fill.createPaint(Color.BLUE, 10, 20, 50, 50);
+        check("solid fill returns blue", p2.equals(Color.BLUE));
+    }
+
+    private static void testGradientFill() {
+        GradientFill fill = new GradientFill();
+        check("gradient fill name", "Gradient".equals(fill.getName()));
+        check("gradient default angle is 0", fill.getAngleDegrees() == 0);
+
+        fill.setAngleDegrees(90);
+        check("gradient angle set to 90", fill.getAngleDegrees() == 90);
+
+        // Should return a GradientPaint for valid dimensions
+        Paint p = fill.createPaint(Color.RED, 0, 0, 100, 100);
+        check("gradient fill returns GradientPaint", p instanceof GradientPaint);
+
+        // Zero-size falls back to base color
+        Paint pZero = fill.createPaint(Color.RED, 0, 0, 0, 100);
+        check("gradient fill zero width returns base color", pZero.equals(Color.RED));
+
+        // Implements AngledFillProvider
+        check("gradient implements AngledFillProvider", fill instanceof AngledFillProvider);
+    }
+
+    private static void testCustomGradientFill() {
+        CustomGradientFill fill = new CustomGradientFill();
+        check("custom gradient name", "Custom Gradient".equals(fill.getName()));
+        check("custom gradient default angle is 0", fill.getAngleDegrees() == 0);
+        check("custom gradient has default gradient", fill.getGradient() != null);
+
+        // Set a custom gradient
+        ColorGradient cg = ColorGradient.fractalDefault();
+        fill.setGradient(cg);
+        check("custom gradient set", fill.getGradient() == cg);
+
+        fill.setAngleDegrees(45);
+        check("custom gradient angle set to 45", fill.getAngleDegrees() == 45);
+
+        // Should return a TexturePaint for valid dimensions
+        Paint p = fill.createPaint(Color.RED, 0, 0, 50, 50);
+        check("custom gradient returns TexturePaint", p instanceof TexturePaint);
+
+        // Zero-size falls back
+        Paint pZero = fill.createPaint(Color.RED, 0, 0, 0, 50);
+        check("custom gradient zero width returns base color", pZero.equals(Color.RED));
+    }
+
+    private static void testCheckerboardFill() {
+        CheckerboardFill fill = new CheckerboardFill();
+        check("checkerboard fill name", "Checkerboard".equals(fill.getName()));
+
+        Paint p = fill.createPaint(Color.RED, 0, 0, 100, 100);
+        check("checkerboard returns TexturePaint", p instanceof TexturePaint);
+
+        // Verify the texture has both light and dark colors
+        TexturePaint tp = (TexturePaint) p;
+        BufferedImage tex = tp.getImage();
+        check("checkerboard texture is 16x16", tex.getWidth() == 16 && tex.getHeight() == 16);
+        int topLeft = tex.getRGB(0, 0);
+        int topRight = tex.getRGB(8, 0);
+        check("checkerboard has two different colors", topLeft != topRight);
+
+        // Not an AngledFillProvider
+        check("checkerboard is not angled", !(fill instanceof AngledFillProvider));
+    }
+
+    private static void testDiagonalStripeFill() {
+        DiagonalStripeFill fill = new DiagonalStripeFill();
+        check("stripe fill name", "Diagonal Stripes".equals(fill.getName()));
+        check("stripe default angle is 45", fill.getAngleDegrees() == 45);
+
+        fill.setAngleDegrees(60);
+        check("stripe angle set to 60", fill.getAngleDegrees() == 60);
+
+        Paint p = fill.createPaint(Color.BLUE, 0, 0, 100, 100);
+        check("stripe returns TexturePaint", p instanceof TexturePaint);
+
+        // Zero-size falls back
+        Paint pZero = fill.createPaint(Color.BLUE, 0, 0, 0, 100);
+        check("stripe zero width returns base color", pZero.equals(Color.BLUE));
+
+        check("stripe implements AngledFillProvider", fill instanceof AngledFillProvider);
+    }
+
+    // === ColorGradient Extended Tests ===
+
+    private static void testColorGradientInterpolation() {
+        System.out.println("\n  -- ColorGradient Extended --");
+        ColorGradient g = new ColorGradient(); // default: black to white
+        Color mid = g.getColorAt(0.5f);
+        int midR = mid.getRed(), midG = mid.getGreen(), midB = mid.getBlue();
+        check("default gradient midpoint ~ gray (r=" + midR + ")",
+                midR >= 125 && midR <= 130 && midG >= 125 && midG <= 130);
+
+        // Endpoints
+        Color start = g.getColorAt(0.0f);
+        check("default gradient start is black", start.getRed() == 0 && start.getGreen() == 0 && start.getBlue() == 0);
+        Color end = g.getColorAt(1.0f);
+        check("default gradient end is white", end.getRed() == 255 && end.getGreen() == 255 && end.getBlue() == 255);
+
+        // Out of range clamping
+        Color below = g.getColorAt(-0.5f);
+        check("gradient clamps below 0", below.getRGB() == start.getRGB());
+        Color above = g.getColorAt(1.5f);
+        check("gradient clamps above 1", above.getRGB() == end.getRGB());
+    }
+
+    private static void testColorGradientAddRemoveStops() {
+        ColorGradient g = new ColorGradient(); // 2 stops: black, white
+        check("default has 2 stops", g.getStops().size() == 2);
+
+        g.addStop(0.5f, Color.RED);
+        check("after add has 3 stops", g.getStops().size() == 3);
+
+        // Midpoint should now be red
+        Color mid = g.getColorAt(0.5f);
+        check("midpoint is red after adding red stop",
+                mid.getRed() == 255 && mid.getGreen() == 0 && mid.getBlue() == 0);
+
+        // Remove the red stop
+        ColorGradient.Stop redStop = g.getStops().get(1); // sorted: black(0), red(0.5), white(1)
+        g.removeStop(redStop);
+        check("after remove has 2 stops", g.getStops().size() == 2);
+
+        // Can't remove below 2 stops
+        g.removeStop(g.getStops().get(0));
+        check("can't remove below 2 stops", g.getStops().size() == 2);
+
+        // Stop position clamping
+        ColorGradient.Stop s = new ColorGradient.Stop(1.5f, Color.GREEN);
+        check("stop position clamped to 1.0", s.getPosition() == 1.0f);
+        s.setPosition(-0.5f);
+        check("stop position clamped to 0.0", s.getPosition() == 0.0f);
+    }
+
+    private static void testColorGradientFromBaseColor() {
+        ColorGradient g = ColorGradient.fromBaseColor(Color.RED);
+        check("fromBaseColor has 6 stops", g.getStops().size() == 6);
+
+        Color[] colors = g.toColors(256);
+        check("fromBaseColor produces 256 colors", colors.length == 256);
+
+        // Should have color variety
+        int uniqueColors = 0;
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (Color c : colors) seen.add(c.getRGB());
+        uniqueColors = seen.size();
+        check("fromBaseColor has color variety (" + uniqueColors + " unique)", uniqueColors > 50);
+
+        // First stop should be dark, last should be very dark
+        Color first = g.getColorAt(0.0f);
+        Color last = g.getColorAt(1.0f);
+        check("fromBaseColor first stop is dark", brightness(first) < 0.5f);
+        check("fromBaseColor last stop is very dark", brightness(last) < 0.1f);
+    }
+
+    private static float brightness(Color c) {
+        return (c.getRed() * 0.299f + c.getGreen() * 0.587f + c.getBlue() * 0.114f) / 255f;
+    }
+
+    private static void testColorGradientSaveLoad() {
+        ColorGradient original = ColorGradient.fractalDefault();
+        File tempFile = new File(System.getProperty("java.io.tmpdir"),
+                "gradient_test_" + System.currentTimeMillis() + ".grd");
+        try {
+            original.save(tempFile);
+            check("gradient file created", tempFile.exists());
+
+            ColorGradient loaded = ColorGradient.load(tempFile);
+            check("loaded gradient has 6 stops", loaded.getStops().size() == 6);
+
+            // Compare colors at sampled positions
+            boolean allMatch = true;
+            for (float t = 0; t <= 1.0f; t += 0.1f) {
+                Color orig = original.getColorAt(t);
+                Color load = loaded.getColorAt(t);
+                if (Math.abs(orig.getRed() - load.getRed()) > 1
+                        || Math.abs(orig.getGreen() - load.getGreen()) > 1
+                        || Math.abs(orig.getBlue() - load.getBlue()) > 1) {
+                    allMatch = false;
+                    break;
+                }
+            }
+            check("loaded gradient matches original", allMatch);
+
+            // Test load of invalid file
+            File badFile = new File(System.getProperty("java.io.tmpdir"),
+                    "bad_gradient_" + System.currentTimeMillis() + ".grd");
+            try (java.io.PrintWriter pw = new java.io.PrintWriter(badFile)) {
+                pw.println("NOT_A_GRADIENT");
+            }
+            boolean threwOnBadHeader = false;
+            try {
+                ColorGradient.load(badFile);
+            } catch (java.io.IOException e) {
+                threwOnBadHeader = true;
+            }
+            check("load rejects bad header", threwOnBadHeader);
+            badFile.delete();
+        } catch (Exception e) {
+            check("gradient save/load failed: " + e.getMessage(), false);
+        } finally {
+            tempFile.delete();
+        }
+    }
+
+    private static void testColorGradientCopyConstructor() {
+        ColorGradient original = ColorGradient.fractalDefault();
+        ColorGradient copy = new ColorGradient(original);
+        check("copy has same stop count", copy.getStops().size() == original.getStops().size());
+
+        // Modifying copy doesn't affect original
+        copy.addStop(0.3f, Color.MAGENTA);
+        check("modifying copy doesn't change original",
+                original.getStops().size() != copy.getStops().size());
+
+        // Colors match before modification
+        Color origMid = original.getColorAt(0.5f);
+        ColorGradient copy2 = new ColorGradient(original);
+        Color copyMid = copy2.getColorAt(0.5f);
+        check("copy produces same colors", origMid.getRGB() == copyMid.getRGB());
+    }
+
+    // === UndoManager Tests ===
+
+    private static void testUndoManagerBasic() {
+        System.out.println("\n  -- UndoManager --");
+        UndoManager um = new UndoManager(100);
+        LayerManager lm = new LayerManager(50, 50);
+
+        check("initially can't undo", !um.canUndo());
+        check("initially can't redo", !um.canRedo());
+
+        // Draw red on the background layer
+        Graphics2D g = lm.getLayer(0).getImage().createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(0, 0, 50, 50);
+        g.dispose();
+
+        um.saveState(lm);
+        check("can undo after save", um.canUndo());
+
+        // Draw blue over it
+        g = lm.getLayer(0).getImage().createGraphics();
+        g.setColor(Color.BLUE);
+        g.fillRect(0, 0, 50, 50);
+        g.dispose();
+        int bluePixel = lm.getLayer(0).getImage().getRGB(25, 25);
+
+        // Undo should restore to red
+        um.undo(lm);
+        int afterUndo = lm.getLayer(0).getImage().getRGB(25, 25);
+        check("undo restores red", (afterUndo & 0x00FF0000) == 0x00FF0000);
+        check("can redo after undo", um.canRedo());
+
+        // Redo should restore to blue... wait, undo restores the state BEFORE blue was drawn.
+        // Actually: saveState saved the state when it was red. Then blue was drawn.
+        // undo() restores the saved state (red). The current state (blue) goes to redo.
+        um.redo(lm);
+        int afterRedo = lm.getLayer(0).getImage().getRGB(25, 25);
+        check("redo restores blue", (afterRedo & 0x000000FF) == 0x000000FF);
+    }
+
+    private static void testUndoManagerRedoClearedOnNewState() {
+        UndoManager um = new UndoManager(100);
+        LayerManager lm = new LayerManager(50, 50);
+
+        um.saveState(lm); // state 1
+        um.saveState(lm); // state 2
+
+        um.undo(lm);
+        check("can redo before new state", um.canRedo());
+
+        um.saveState(lm); // new state clears redo
+        check("redo cleared after new save", !um.canRedo());
+    }
+
+    private static void testUndoManagerCompaction() {
+        UndoManager um = new UndoManager(200);
+        LayerManager lm = new LayerManager(10, 10);
+
+        // Push 85 states to trigger compaction (threshold is 80)
+        for (int i = 0; i < 85; i++) {
+            um.saveState(lm);
+        }
+
+        // After compaction, should still be able to undo but stack is reduced
+        check("can undo after compaction", um.canUndo());
+
+        // Count how many undos we can do (should be ~50 after compaction)
+        int undoCount = 0;
+        while (um.canUndo()) {
+            um.undo(lm);
+            undoCount++;
+        }
+        check("compacted to ~50 undos (got " + undoCount + ")", undoCount <= 55 && undoCount >= 45);
+    }
+
+    private static void testUndoManagerMultiLayer() {
+        UndoManager um = new UndoManager(100);
+        LayerManager lm = new LayerManager(50, 50);
+
+        // Save state with 1 layer
+        um.saveState(lm);
+
+        // Add a second layer and draw on it
+        lm.addLayer();
+        check("2 layers before undo", lm.getLayerCount() == 2);
+        Graphics2D g = lm.getActiveLayer().getImage().createGraphics();
+        g.setColor(Color.GREEN);
+        g.fillRect(0, 0, 50, 50);
+        g.dispose();
+
+        // Undo should restore to 1 layer
+        um.undo(lm);
+        check("undo restores 1 layer", lm.getLayerCount() == 1);
+
+        // Redo should restore 2 layers
+        um.redo(lm);
+        check("redo restores 2 layers", lm.getLayerCount() == 2);
+
+        // Clear
+        um.clear();
+        check("clear resets undo", !um.canUndo());
+        check("clear resets redo", !um.canRedo());
+    }
+
+    // === AviWriter Tests ===
+
+    private static void testAviWriterCreatesValidFile() {
+        System.out.println("\n  -- AviWriter --");
+        File tempFile = new File(System.getProperty("java.io.tmpdir"),
+                "avi_test_" + System.currentTimeMillis() + ".avi");
+        try {
+            BufferedImage frame = new BufferedImage(10, 10, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = frame.createGraphics();
+            g.setColor(Color.RED);
+            g.fillRect(0, 0, 10, 10);
+            g.dispose();
+
+            AviWriter writer = new AviWriter(tempFile, 10, 10, 30);
+            writer.addFrame(frame);
+            writer.close();
+
+            check("AVI file created", tempFile.exists());
+            check("AVI file has content", tempFile.length() > 0);
+
+            // Verify RIFF header
+            try (RandomAccessFile raf = new RandomAccessFile(tempFile, "r")) {
+                byte[] riff = new byte[4];
+                raf.read(riff);
+                check("AVI starts with RIFF", "RIFF".equals(new String(riff)));
+
+                raf.skipBytes(4); // size
+                byte[] avi = new byte[4];
+                raf.read(avi);
+                check("AVI has AVI marker", "AVI ".equals(new String(avi)));
+            }
+        } catch (Exception e) {
+            check("AVI writer failed: " + e.getMessage(), false);
+        } finally {
+            tempFile.delete();
+        }
+    }
+
+    private static void testAviWriterMultipleFrames() {
+        File tempFile = new File(System.getProperty("java.io.tmpdir"),
+                "avi_multi_" + System.currentTimeMillis() + ".avi");
+        try {
+            int W = 20, H = 15;
+            AviWriter writer = new AviWriter(tempFile, W, H, 24);
+
+            // Write 5 frames with different colors
+            Color[] frameColors = {Color.RED, Color.GREEN, Color.BLUE, Color.YELLOW, Color.CYAN};
+            for (Color c : frameColors) {
+                BufferedImage frame = new BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g = frame.createGraphics();
+                g.setColor(c);
+                g.fillRect(0, 0, W, H);
+                g.dispose();
+                writer.addFrame(frame);
+            }
+            writer.close();
+
+            // Verify file size is reasonable
+            // Each frame: rowStride * H + 8 (chunk header)
+            int rowStride = ((W * 3 + 3) / 4) * 4;
+            int frameSize = rowStride * H;
+            long minSize = 5 * (frameSize + 8); // at least 5 frames of data
+            check("AVI multi-frame file large enough (size=" + tempFile.length() + ")",
+                    tempFile.length() > minSize);
+
+            // Verify idx1 chunk exists by checking the file ends with index data
+            try (RandomAccessFile raf = new RandomAccessFile(tempFile, "r")) {
+                // Read the total frames count from avih header
+                raf.seek(48); // AVIH_TOTAL_FRAMES_POS
+                int totalFrames = readIntLE(raf);
+                check("AVI header reports 5 frames", totalFrames == 5);
+            }
+        } catch (Exception e) {
+            check("AVI multi-frame failed: " + e.getMessage(), false);
+        } finally {
+            tempFile.delete();
+        }
+    }
+
+    private static int readIntLE(RandomAccessFile raf) throws java.io.IOException {
+        int b0 = raf.read(), b1 = raf.read(), b2 = raf.read(), b3 = raf.read();
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    }
+
+    // === BlendComposite All Modes Tests ===
+
+    private static void testBlendCompositeAllModes() {
+        System.out.println("\n  -- BlendComposite All Modes --");
+        for (BlendMode mode : BlendMode.values()) {
+            BufferedImage img = new BufferedImage(10, 10, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = img.createGraphics();
+
+            // Base: white
+            g.setColor(Color.WHITE);
+            g.fillRect(0, 0, 10, 10);
+
+            // Blend gray on top
+            g.setComposite(new BlendComposite(mode, 1.0f));
+            g.setColor(new Color(128, 128, 128));
+            g.fillRect(0, 0, 10, 10);
+            g.dispose();
+
+            int pixel = img.getRGB(5, 5);
+            int r = (pixel >> 16) & 0xFF;
+            int gv = (pixel >> 8) & 0xFF;
+            int b = pixel & 0xFF;
+
+            // All modes should produce SOME result (not crash, not transparent)
+            check(mode.getDisplayName() + " blend produces visible result (r=" + r + ")",
+                    (pixel & 0xFF000000) != 0); // not fully transparent
+        }
+
+        // Specific mode behaviors
+        // MULTIPLY: white * gray = gray
+        BufferedImage mulImg = blendTest(Color.WHITE, new Color(128, 128, 128), BlendMode.MULTIPLY);
+        int mulR = (mulImg.getRGB(5, 5) >> 16) & 0xFF;
+        check("MULTIPLY white*gray ~ 128 (got " + mulR + ")", mulR >= 120 && mulR <= 140);
+
+        // SCREEN: 1-(1-white)*(1-gray) = white
+        BufferedImage scrImg = blendTest(Color.WHITE, new Color(128, 128, 128), BlendMode.SCREEN);
+        int scrR = (scrImg.getRGB(5, 5) >> 16) & 0xFF;
+        check("SCREEN white+gray ~ 255 (got " + scrR + ")", scrR >= 250);
+
+        // DIFFERENCE: |white - gray| = gray
+        BufferedImage diffImg = blendTest(Color.WHITE, new Color(128, 128, 128), BlendMode.DIFFERENCE);
+        int diffR = (diffImg.getRGB(5, 5) >> 16) & 0xFF;
+        check("DIFFERENCE |white-gray| ~ 127 (got " + diffR + ")", diffR >= 120 && diffR <= 135);
+
+        // ADD: white + gray (clamped to 255)
+        BufferedImage addImg = blendTest(new Color(100, 100, 100), new Color(100, 100, 100), BlendMode.ADD);
+        int addR = (addImg.getRGB(5, 5) >> 16) & 0xFF;
+        check("ADD 100+100 ~ 200 (got " + addR + ")", addR >= 190 && addR <= 210);
+
+        // NORMAL: just replaces
+        BufferedImage normImg = blendTest(Color.WHITE, Color.RED, BlendMode.NORMAL);
+        int normR = (normImg.getRGB(5, 5) >> 16) & 0xFF;
+        int normG = (normImg.getRGB(5, 5) >> 8) & 0xFF;
+        check("NORMAL replaces with source (r=255,g=0, got r=" + normR + ",g=" + normG + ")",
+                normR == 255 && normG == 0);
+
+        // Opacity test: 50% opacity NORMAL blend
+        BufferedImage opImg = new BufferedImage(10, 10, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D og = opImg.createGraphics();
+        og.setColor(Color.WHITE);
+        og.fillRect(0, 0, 10, 10);
+        og.setComposite(new BlendComposite(BlendMode.NORMAL, 0.5f));
+        og.setColor(Color.BLACK);
+        og.fillRect(0, 0, 10, 10);
+        og.dispose();
+        int opR = (opImg.getRGB(5, 5) >> 16) & 0xFF;
+        check("50% opacity NORMAL black on white ~ 128 (got " + opR + ")",
+                opR >= 120 && opR <= 135);
+    }
+
+    private static BufferedImage blendTest(Color base, Color blend, BlendMode mode) {
+        BufferedImage img = new BufferedImage(10, 10, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(base);
+        g.fillRect(0, 0, 10, 10);
+        g.setComposite(new BlendComposite(mode, 1.0f));
+        g.setColor(blend);
+        g.fillRect(0, 0, 10, 10);
+        g.dispose();
+        return img;
+    }
+
+    // === FractalJsonUtil Edge Cases ===
+
+    private static void testJsonParseEdgeCases() {
+        System.out.println("\n  -- FractalJsonUtil Edge Cases --");
+
+        // Empty JSON
+        var empty = FractalJsonUtil.parseJson("{}");
+        check("empty JSON parses to empty map", empty.isEmpty());
+
+        // Extra whitespace
+        var ws = FractalJsonUtil.parseJson("{ \"key\" : \"value\" }");
+        check("whitespace handled", "value".equals(ws.get("key")));
+
+        // Numeric values (unquoted)
+        var num = FractalJsonUtil.parseJson("{\"count\": 42}");
+        check("numeric value parsed", "42".equals(num.get("count")));
+
+        // Multiple entries
+        var multi = FractalJsonUtil.parseJson(
+                "{\"a\": \"1\", \"b\": \"2\", \"c\": \"3\"}");
+        check("multiple entries parsed", multi.size() == 3);
+        check("multi entry a", "1".equals(multi.get("a")));
+        check("multi entry c", "3".equals(multi.get("c")));
+
+        // Fragment parsing
+        var frag = FractalJsonUtil.parseJsonFragment("\"x\": \"10\", \"y\": \"20\"");
+        check("fragment parsing works", "10".equals(frag.get("x")));
+        check("fragment parsing y", "20".equals(frag.get("y")));
+    }
+
+    // === QuadTree Extended Tests ===
+
+    private static void testQuadTreeLookupFull() {
+        System.out.println("\n  -- QuadTree Extended --");
+        IterationQuadTree qt = new IterationQuadTree(-4, 4, -4, 4);
+
+        // Insert with final Z values
+        qt.insert(1.0, 1.0, 42, 0.5, 0.3);
+        qt.insert(2.0, 2.0, 99, 1.5, -0.7);
+
+        // lookupFull should return iter + finalZ
+        var result = qt.lookupFull(1.0, 1.0, 0.001);
+        check("lookupFull returns result", result != null);
+        if (result != null) {
+            check("lookupFull iter correct", result.iterationCount == 42);
+            check("lookupFull finalZr correct", Math.abs(result.finalZr - 0.5) < 0.001);
+            check("lookupFull finalZi correct", Math.abs(result.finalZi - 0.3) < 0.001);
+        }
+
+        // Miss returns null
+        var miss = qt.lookupFull(3.0, 3.0, 0.001);
+        check("lookupFull miss returns null", miss == null);
+    }
+
+    private static void testQuadTreeLargeScale() {
+        IterationQuadTree qt = new IterationQuadTree(-2, 2, -2, 2);
+
+        // Insert many points
+        int count = 0;
+        for (double x = -1.9; x <= 1.9; x += 0.1) {
+            for (double y = -1.9; y <= 1.9; y += 0.1) {
+                qt.insert(x, y, (int)(x * 100 + y * 10));
+                count++;
+            }
+        }
+        check("large insert count (" + count + " points)", qt.size() >= count);
+
+        // Lookups should still work
+        int found = qt.lookup(0.0, 0.0, 0.01);
+        check("large scale lookup at origin", found != IterationQuadTree.CACHE_MISS);
+
+        // Prune to a small region
+        qt.pruneOutside(-0.5, 0.5, -0.5, 0.5);
+        int afterPrune = qt.lookup(0.0, 0.0, 0.01);
+        check("lookup works after prune", afterPrune != IterationQuadTree.CACHE_MISS);
+
+        int outsidePrune = qt.lookup(1.5, 1.5, 0.01);
+        check("outside pruned region returns miss", outsidePrune == IterationQuadTree.CACHE_MISS);
     }
 
     private static void check(String name, boolean condition) {
