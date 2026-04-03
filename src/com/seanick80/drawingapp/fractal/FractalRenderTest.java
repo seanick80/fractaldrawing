@@ -1,6 +1,8 @@
 package com.seanick80.drawingapp.fractal;
 
 import com.seanick80.drawingapp.UndoManager;
+import com.seanick80.drawingapp.dock.DockManager;
+import com.seanick80.drawingapp.dock.DockablePanel;
 import com.seanick80.drawingapp.fills.*;
 import com.seanick80.drawingapp.gradient.ColorGradient;
 import com.seanick80.drawingapp.layers.BlendComposite;
@@ -130,6 +132,9 @@ public class FractalRenderTest {
         // QuadTree extended tests
         testQuadTreeLookupFull();
         testQuadTreeLargeScale();
+
+        // Dock system tests
+        testDockManagerAndDockablePanel();
 
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
@@ -2426,6 +2431,54 @@ public class FractalRenderTest {
 
         int outsidePrune = qt.lookup(1.5, 1.5, 0.01);
         check("outside pruned region returns miss", outsidePrune == IterationQuadTree.CACHE_MISS);
+    }
+
+    private static void testDockManagerAndDockablePanel() {
+        System.out.println("\n  -- Dock System --");
+
+        // Test DockManager registration and callback (no UI — avoids JDialog)
+        javax.swing.JFrame frame = new javax.swing.JFrame();
+        DockManager manager = new DockManager(frame);
+
+        javax.swing.JPanel content1 = new javax.swing.JPanel();
+        javax.swing.JPanel content2 = new javax.swing.JPanel();
+
+        DockablePanel dp1 = new DockablePanel("Panel A", content1, manager);
+        DockablePanel dp2 = new DockablePanel("Panel B", content2, manager);
+
+        // Initial state
+        check("dock panel starts docked", dp1.isDocked());
+        check("dock panel title", "Panel A".equals(dp1.getTitle()));
+        check("dock panel content accessible", dp1.getContentPanel() == content1);
+        check("manager has 2 panels", manager.getPanels().size() == 2);
+        check("manager panels in order", manager.getPanels().get(0) == dp1);
+        check("manager panels second", manager.getPanels().get(1) == dp2);
+
+        // Test DockablePanel content is added as child
+        boolean hasContent = false;
+        for (java.awt.Component c : dp1.getComponents()) {
+            if (c == content1) hasContent = true;
+        }
+        check("dock panel contains content", hasContent);
+
+        // Test dock() on already-docked panel is safe
+        dp1.dock();
+        check("dock on docked is no-op", dp1.isDocked());
+
+        // Layout callback fires on manager operations
+        int[] callbackCount = {0};
+        manager.setLayoutCallback(() -> callbackCount[0]++);
+
+        // Test refreshLayout via dock (even if already docked, manager.dock still calls refresh)
+        manager.dock(dp1);
+        check("layout callback fires on dock", callbackCount[0] == 1);
+
+        // dockAll fires callback once
+        callbackCount[0] = 0;
+        manager.dockAll();
+        check("dockAll fires callback", callbackCount[0] == 1);
+
+        frame.dispose();
     }
 
     private static void check(String name, boolean condition) {

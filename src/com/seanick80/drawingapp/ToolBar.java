@@ -66,19 +66,11 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         addTool(buttonPanel, new FractalTool(), false);
 
         add(buttonPanel);
-        add(Box.createVerticalStrut(12));
 
-        // Tool Settings container
-        JLabel settingsLabel = new JLabel("Tool Settings");
-        settingsLabel.setFont(settingsLabel.getFont().deriveFont(Font.BOLD, 11f));
-        settingsLabel.setAlignmentX(LEFT_ALIGNMENT);
-        add(settingsLabel);
-        add(Box.createVerticalStrut(4));
-
+        // Tool settings container (managed here, displayed externally via DockablePanel)
         toolSettingsContainer = new JPanel();
         toolSettingsContainer.setLayout(new BorderLayout());
         toolSettingsContainer.setAlignmentX(LEFT_ALIGNMENT);
-        add(toolSettingsContainer);
 
         // Show initial tool's settings
         refreshSettingsPanel();
@@ -368,6 +360,11 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         }
         toolSettingsContainer.revalidate();
         toolSettingsContainer.repaint();
+    }
+
+    /** Returns the tool settings panel (managed by ToolBar, displayed externally). */
+    public JPanel getToolSettingsContainer() {
+        return toolSettingsContainer;
     }
 
     public Tool getActiveTool() {
