@@ -5,6 +5,8 @@ import com.seanick80.drawingapp.UndoManager;
 import com.seanick80.drawingapp.dock.DockManager;
 import com.seanick80.drawingapp.dock.DockablePanel;
 import com.seanick80.drawingapp.fills.*;
+import com.seanick80.drawingapp.project.AppState;
+import com.seanick80.drawingapp.project.FdpSerializer;
 import com.seanick80.drawingapp.tools.*;
 import com.seanick80.drawingapp.gradient.ColorGradient;
 import com.seanick80.drawingapp.layers.BlendComposite;
@@ -168,6 +170,15 @@ public class FractalRenderTest {
         testScreensaverControllerLifecycle();
         testScreensaverPanelTransition();
         testScreensaverFindLocationNotNull();
+
+        // FDP project file tests
+        testFdpRoundTripSingleLayer();
+        testFdpRoundTripMultiLayer();
+        testFdpRoundTripFractalState();
+        testFdpRoundTripGradient();
+        testFdpRoundTripLayerProperties();
+        testFdpBackwardCompat();
+        testFdpRoundTripBigDecimalPrecision();
 
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
@@ -3070,6 +3081,194 @@ public class FractalRenderTest {
         if (loc != null) {
             check("location has 3 components", loc.length == 3);
             check("location halfSpan > 0", loc[2] > 0);
+        }
+    }
+
+    // === FDP Project File Tests ===
+
+    private static void testFdpRoundTripSingleLayer() {
+        File tmpFile = new File(System.getProperty("java.io.tmpdir"),
+                "fdp_test_single_" + System.currentTimeMillis() + ".fdp");
+        try {
+            LayerManager lm = new LayerManager(50, 50);
+            // Draw something on the layer
+            java.awt.Graphics2D g = lm.getActiveLayer().getImage().createGraphics();
+            g.setColor(java.awt.Color.RED);
+            g.fillRect(10, 10, 20, 20);
+            g.dispose();
+
+            FractalRenderer renderer = newRenderer();
+            ColorGradient grad = gradient();
+
+            FdpSerializer.save(tmpFile, lm, renderer, grad);
+            check("FDP file created", tmpFile.exists());
+            check("FDP file non-empty", tmpFile.length() > 0);
+
+            AppState state = FdpSerializer.load(tmpFile);
+            check("FDP single layer count", state.layers.size() == 1);
+            check("FDP canvas width", state.canvasWidth == 50);
+            check("FDP canvas height", state.canvasHeight == 50);
+
+            // Verify pixel data survived
+            Layer loaded = state.layers.get(0);
+            int pixel = loaded.getImage().getRGB(15, 15);
+            int red = (pixel >> 16) & 0xFF;
+            check("FDP layer pixel preserved", red > 200); // should be red
+        } catch (Exception e) {
+            check("FDP single layer round-trip no exception: " + e.getMessage(), false);
+        } finally {
+            tmpFile.delete();
+        }
+    }
+
+    private static void testFdpRoundTripMultiLayer() {
+        File tmpFile = new File(System.getProperty("java.io.tmpdir"),
+                "fdp_test_multi_" + System.currentTimeMillis() + ".fdp");
+        try {
+            LayerManager lm = new LayerManager(40, 40);
+            lm.addLayer();
+            lm.addLayer();
+            lm.setActiveIndex(1);
+
+            // Set different blend modes
+            lm.getLayer(1).setBlendMode(BlendMode.MULTIPLY);
+            lm.getLayer(2).setBlendMode(BlendMode.SCREEN);
+            lm.getLayer(1).setOpacity(0.5f);
+
+            FdpSerializer.save(tmpFile, lm, newRenderer(), gradient());
+            AppState state = FdpSerializer.load(tmpFile);
+
+            check("FDP multi layer count", state.layers.size() == 3);
+            check("FDP active layer index", state.activeLayerIndex == 1);
+            check("FDP layer 1 blend mode", state.layers.get(1).getBlendMode() == BlendMode.MULTIPLY);
+            check("FDP layer 2 blend mode", state.layers.get(2).getBlendMode() == BlendMode.SCREEN);
+            check("FDP layer 1 opacity", Math.abs(state.layers.get(1).getOpacity() - 0.5f) < 0.01f);
+        } catch (Exception e) {
+            check("FDP multi layer round-trip no exception: " + e.getMessage(), false);
+        } finally {
+            tmpFile.delete();
+        }
+    }
+
+    private static void testFdpRoundTripFractalState() {
+        File tmpFile = new File(System.getProperty("java.io.tmpdir"),
+                "fdp_test_fractal_" + System.currentTimeMillis() + ".fdp");
+        try {
+            LayerManager lm = new LayerManager(40, 40);
+            FractalRenderer renderer = newRenderer();
+            renderer.setMaxIterations(512);
+            renderer.setColorMode(FractalRenderer.ColorMode.DIVISION);
+            renderer.setInteriorPruning(false);
+
+            FdpSerializer.save(tmpFile, lm, renderer, gradient());
+            AppState state = FdpSerializer.load(tmpFile);
+
+            check("FDP fractal state present", state.fractalState != null);
+            check("FDP fractal type", "MANDELBROT".equals(state.fractalState.typeName));
+            check("FDP fractal iterations", state.fractalState.maxIterations == 512);
+            check("FDP fractal color mode", "DIVISION".equals(state.fractalState.colorMode));
+            check("FDP fractal pruning off", !state.fractalState.interiorPruning);
+        } catch (Exception e) {
+            check("FDP fractal state round-trip no exception: " + e.getMessage(), false);
+        } finally {
+            tmpFile.delete();
+        }
+    }
+
+    private static void testFdpRoundTripGradient() {
+        File tmpFile = new File(System.getProperty("java.io.tmpdir"),
+                "fdp_test_gradient_" + System.currentTimeMillis() + ".fdp");
+        try {
+            LayerManager lm = new LayerManager(40, 40);
+            ColorGradient grad = gradient();
+
+            FdpSerializer.save(tmpFile, lm, newRenderer(), grad);
+            AppState state = FdpSerializer.load(tmpFile);
+
+            check("FDP gradient present", state.gradient != null);
+            check("FDP gradient stop count",
+                    state.gradient.getStops().size() == grad.getStops().size());
+
+            // Verify first and last stop colors
+            ColorGradient.Stop origFirst = grad.getStops().get(0);
+            ColorGradient.Stop loadFirst = state.gradient.getStops().get(0);
+            check("FDP gradient first stop position",
+                    Math.abs(origFirst.getPosition() - loadFirst.getPosition()) < 0.001f);
+            check("FDP gradient first stop color",
+                    origFirst.getColor().equals(loadFirst.getColor()));
+        } catch (Exception e) {
+            check("FDP gradient round-trip no exception: " + e.getMessage(), false);
+        } finally {
+            tmpFile.delete();
+        }
+    }
+
+    private static void testFdpRoundTripLayerProperties() {
+        File tmpFile = new File(System.getProperty("java.io.tmpdir"),
+                "fdp_test_props_" + System.currentTimeMillis() + ".fdp");
+        try {
+            LayerManager lm = new LayerManager(30, 30);
+            Layer layer = lm.getActiveLayer();
+            layer.setName("Test Layer");
+            layer.setVisible(false);
+            layer.setLocked(true);
+            layer.setOpacity(0.75f);
+            layer.setBlendMode(BlendMode.OVERLAY);
+
+            FdpSerializer.save(tmpFile, lm, newRenderer(), gradient());
+            AppState state = FdpSerializer.load(tmpFile);
+
+            Layer loaded = state.layers.get(0);
+            check("FDP layer name", "Test Layer".equals(loaded.getName()));
+            check("FDP layer visible false", !loaded.isVisible());
+            check("FDP layer locked true", loaded.isLocked());
+            check("FDP layer opacity 0.75", Math.abs(loaded.getOpacity() - 0.75f) < 0.01f);
+            check("FDP layer blend mode OVERLAY", loaded.getBlendMode() == BlendMode.OVERLAY);
+        } catch (Exception e) {
+            check("FDP layer properties no exception: " + e.getMessage(), false);
+        } finally {
+            tmpFile.delete();
+        }
+    }
+
+    private static void testFdpBackwardCompat() {
+        // Simulate loading a file without fractal state or gradient (older version)
+        File tmpFile = new File(System.getProperty("java.io.tmpdir"),
+                "fdp_test_compat_" + System.currentTimeMillis() + ".fdp");
+        try {
+            LayerManager lm = new LayerManager(30, 30);
+            // Save with null renderer and gradient
+            FdpSerializer.save(tmpFile, lm, null, null);
+            AppState state = FdpSerializer.load(tmpFile);
+
+            check("FDP backward compat layers", state.layers.size() == 1);
+            check("FDP backward compat no fractal", state.fractalState == null);
+            check("FDP backward compat no gradient", state.gradient == null);
+        } catch (Exception e) {
+            check("FDP backward compat no exception: " + e.getMessage(), false);
+        } finally {
+            tmpFile.delete();
+        }
+    }
+
+    private static void testFdpRoundTripBigDecimalPrecision() {
+        File tmpFile = new File(System.getProperty("java.io.tmpdir"),
+                "fdp_test_precision_" + System.currentTimeMillis() + ".fdp");
+        try {
+            LayerManager lm = new LayerManager(30, 30);
+            FractalRenderer renderer = newDeeperZoomRenderer();
+
+            FdpSerializer.save(tmpFile, lm, renderer, gradient());
+            AppState state = FdpSerializer.load(tmpFile);
+
+            // Verify BigDecimal precision preserved via string serialization
+            String origMinReal = renderer.getMinRealBig().toPlainString();
+            check("FDP BigDecimal minReal preserved", origMinReal.equals(state.fractalState.minReal));
+            check("FDP BigDecimal iterations", state.fractalState.maxIterations == 706);
+        } catch (Exception e) {
+            check("FDP BigDecimal precision no exception: " + e.getMessage(), false);
+        } finally {
+            tmpFile.delete();
         }
     }
 

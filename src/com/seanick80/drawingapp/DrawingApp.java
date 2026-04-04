@@ -4,15 +4,23 @@ import com.seanick80.drawingapp.dock.DockManager;
 import com.seanick80.drawingapp.dock.DockablePanel;
 import com.seanick80.drawingapp.fills.*;
 import com.seanick80.drawingapp.gradient.GradientToolbar;
+import com.seanick80.drawingapp.layers.Layer;
 import com.seanick80.drawingapp.layers.LayerManager;
 import com.seanick80.drawingapp.layers.LayerPanel;
 import com.seanick80.drawingapp.tools.*;
 
+import com.seanick80.drawingapp.fractal.FractalRenderer;
+import com.seanick80.drawingapp.gradient.ColorGradient;
+import com.seanick80.drawingapp.project.AppState;
+import com.seanick80.drawingapp.project.FdpSerializer;
+
 import javax.swing.*;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.math.BigDecimal;
 import java.util.List;
 import javax.imageio.ImageIO;
 
@@ -254,35 +262,120 @@ public class DrawingApp extends JFrame {
 
     private void openImage() {
         JFileChooser chooser = new JFileChooser();
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("FDP Project (*.fdp)", "fdp"));
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("PNG Image (*.png)", "png"));
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("JPEG Image (*.jpg, *.jpeg)", "jpg", "jpeg"));
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("BMP Image (*.bmp)", "bmp"));
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File file = chooser.getSelectedFile();
             try {
-                BufferedImage img = ImageIO.read(chooser.getSelectedFile());
-                if (img != null) {
-                    canvas.loadImage(img);
+                if (file.getName().toLowerCase().endsWith(".fdp")) {
+                    loadFdpProject(file);
+                } else {
+                    BufferedImage img = ImageIO.read(file);
+                    if (img != null) {
+                        canvas.loadImage(img);
+                    }
                 }
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Failed to open image: " + ex.getMessage());
+                JOptionPane.showMessageDialog(this, "Failed to open: " + ex.getMessage());
             }
         }
     }
 
     private void saveImage() {
         JFileChooser chooser = new JFileChooser();
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("FDP Project (*.fdp)", "fdp"));
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("PNG Image (*.png)", "png"));
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("JPEG Image (*.jpg)", "jpg"));
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("BMP Image (*.bmp)", "bmp"));
         if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
             try {
                 File file = chooser.getSelectedFile();
                 String name = file.getName().toLowerCase();
-                String format = "png";
-                if (name.endsWith(".jpg") || name.endsWith(".jpeg")) format = "jpg";
-                else if (name.endsWith(".bmp")) format = "bmp";
-                else if (!name.endsWith(".png")) file = new File(file.getPath() + ".png");
-                // Flatten all layers for image export
-                BufferedImage flat = canvas.getLayerManager().composite();
-                ImageIO.write(flat, format, file);
+
+                if (name.endsWith(".fdp")) {
+                    saveFdpProject(file);
+                } else {
+                    String format = "png";
+                    if (name.endsWith(".jpg") || name.endsWith(".jpeg")) format = "jpg";
+                    else if (name.endsWith(".bmp")) format = "bmp";
+                    else if (!name.endsWith(".png")) file = new File(file.getPath() + ".png");
+                    BufferedImage flat = canvas.getLayerManager().composite();
+                    ImageIO.write(flat, format, file);
+                }
             } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Failed to save image: " + ex.getMessage());
+                JOptionPane.showMessageDialog(this, "Failed to save: " + ex.getMessage());
             }
         }
+    }
+
+    private void saveFdpProject(File file) throws java.io.IOException {
+        // Get the fractal renderer from the active tool if available
+        FractalRenderer renderer = null;
+        Tool fractalTool = toolBar.getTool("Fractal");
+        if (fractalTool instanceof FractalTool ft) {
+            renderer = ft.getRenderer();
+        }
+        ColorGradient gradient = null;
+        if (toolBar.getGradientToolbar() != null) {
+            gradient = toolBar.getGradientToolbar().getGradient();
+        }
+        FdpSerializer.save(file, canvas.getLayerManager(), renderer, gradient);
+    }
+
+    private void loadFdpProject(File file) throws java.io.IOException {
+        AppState state = FdpSerializer.load(file);
+
+        // Restore layers
+        LayerManager lm = canvas.getLayerManager();
+        // Clear existing layers and replace with loaded ones
+        while (lm.getLayerCount() > 1) {
+            lm.removeLayer(1);
+        }
+        // Replace background layer
+        if (!state.layers.isEmpty()) {
+            Layer bg = state.layers.get(0);
+            Layer existing = lm.getLayer(0);
+            existing.setName(bg.getName());
+            java.awt.Graphics2D g = existing.getImage().createGraphics();
+            g.setComposite(java.awt.AlphaComposite.Src);
+            g.drawImage(bg.getImage(), 0, 0, null);
+            g.dispose();
+            existing.setOpacity(bg.getOpacity());
+            existing.setBlendMode(bg.getBlendMode());
+            existing.setVisible(bg.isVisible());
+            existing.setLocked(bg.isLocked());
+
+            // Add remaining layers
+            for (int i = 1; i < state.layers.size(); i++) {
+                Layer loaded = state.layers.get(i);
+                Layer added = lm.addLayer();
+                if (added != null) {
+                    added.setName(loaded.getName());
+                    java.awt.Graphics2D g2 = added.getImage().createGraphics();
+                    g2.setComposite(java.awt.AlphaComposite.Src);
+                    g2.drawImage(loaded.getImage(), 0, 0, null);
+                    g2.dispose();
+                    added.setOpacity(loaded.getOpacity());
+                    added.setBlendMode(loaded.getBlendMode());
+                    added.setVisible(loaded.isVisible());
+                    added.setLocked(loaded.isLocked());
+                }
+            }
+        }
+        if (state.activeLayerIndex >= 0 && state.activeLayerIndex < lm.getLayerCount()) {
+            lm.setActiveIndex(state.activeLayerIndex);
+        }
+
+        // Restore gradient
+        if (state.gradient != null && toolBar.getGradientToolbar() != null) {
+            toolBar.getGradientToolbar().getGradient().copyFrom(state.gradient);
+            toolBar.getGradientToolbar().repaint();
+        }
+
+        canvas.repaint();
+        lm.fireChange();
     }
 
     public static void main(String[] args) {

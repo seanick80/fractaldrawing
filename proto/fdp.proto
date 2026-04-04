@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package com.seanick80.drawingapp.project;
+
+option java_package = "com.seanick80.drawingapp.project";
+option java_outer_classname = "FdpProto";
+
+// Top-level project file
+message FdpFile {
+    int32 version = 1;
+    int32 canvas_width = 2;
+    int32 canvas_height = 3;
+    repeated LayerData layers = 4;
+    int32 active_layer_index = 5;
+    FractalState fractal_state = 6;
+    GradientData gradient = 7;
+}
+
+// Layer with PNG-compressed pixel data
+message LayerData {
+    string name = 1;
+    bytes png_data = 2;
+    float opacity = 3;
+    string blend_mode = 4;
+    bool visible = 5;
+    bool locked = 6;
+}
+
+// Complete fractal renderer state
+message FractalState {
+    string type_name = 1;
+    // Use strings for BigDecimal precision
+    string min_real = 2;
+    string max_real = 3;
+    string min_imag = 4;
+    string max_imag = 5;
+    int32 max_iterations = 6;
+    string render_mode = 7;
+    string color_mode = 8;
+    string julia_real = 9;
+    string julia_imag = 10;
+    bool interior_pruning = 11;
+    bool pixel_guessing = 12;
+}
+
+// Gradient with color stops
+message GradientData {
+    repeated GradientStop stops = 1;
+}
+
+message GradientStop {
+    float position = 1;
+    int32 red = 2;
+    int32 green = 3;
+    int32 blue = 4;
+}

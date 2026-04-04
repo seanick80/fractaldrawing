@@ -1,6 +1,9 @@
 out/
 *.class
-*.jar
+# Exclude JARs in out/ but keep lib/ dependencies
+out/**/*.jar
+# Local protoc binary (download via setup)
+tools/protoc/
 .idea/
 *.iml
 .vscode/
