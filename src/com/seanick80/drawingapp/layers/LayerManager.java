@@ -153,6 +153,16 @@ public class LayerManager {
         fireChange();
     }
 
+    /** Reset to a single white background layer at the given size. */
+    public void reset(int width, int height) {
+        layers.clear();
+        Layer bg = new Layer("Background", width, height);
+        bg.fill(Color.WHITE);
+        layers.add(bg);
+        activeIndex = 0;
+        fireChange();
+    }
+
     // --- Change notification ---
 
     public void addChangeListener(LayerChangeListener listener) {

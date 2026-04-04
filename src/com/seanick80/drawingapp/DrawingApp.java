@@ -331,14 +331,14 @@ public class DrawingApp extends JFrame {
     private void loadFdpProject(File file) throws java.io.IOException {
         AppState state = FdpSerializer.load(file);
 
-        // Restore layers
+        // Restore layers — reset to correct canvas size first
         LayerManager lm = canvas.getLayerManager();
-        // Clear existing layers and replace with loaded ones
-        while (lm.getLayerCount() > 1) {
-            lm.removeLayer(1);
-        }
-        // Replace background layer
+        lm.reset(state.canvasWidth, state.canvasHeight);
+        canvas.setPreferredSize(new Dimension(state.canvasWidth, state.canvasHeight));
+        canvas.revalidate();
+
         if (!state.layers.isEmpty()) {
+            // Replace background layer
             Layer bg = state.layers.get(0);
             Layer existing = lm.getLayer(0);
             existing.setName(bg.getName());

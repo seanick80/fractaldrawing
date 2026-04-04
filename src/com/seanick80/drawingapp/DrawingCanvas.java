@@ -45,15 +45,16 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     }
 
     public void newImage(int width, int height) {
-        layerManager.resizeAll(width, height);
+        layerManager.reset(width, height);
         compositeImage();
         setPreferredSize(new Dimension(width, height));
         revalidate();
+        repaint();
         undoManager.clear();
     }
 
     public void loadImage(BufferedImage img) {
-        layerManager.resizeAll(img.getWidth(), img.getHeight());
+        layerManager.reset(img.getWidth(), img.getHeight());
         // Draw loaded image onto the background layer
         Graphics2D g = layerManager.getLayer(0).getImage().createGraphics();
         g.drawImage(img, 0, 0, null);
