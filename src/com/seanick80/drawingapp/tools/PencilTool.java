@@ -1,6 +1,7 @@
 package com.seanick80.drawingapp.tools;
 
 import com.seanick80.drawingapp.DrawingCanvas;
+import javax.swing.JPanel;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 
@@ -10,8 +11,15 @@ public class PencilTool implements Tool {
     private int strokeSize = 2;
 
     @Override public String getName() { return "Pencil"; }
+    @Override public boolean hasStrokeSize() { return true; }
 
+    @Override
     public void setStrokeSize(int size) { this.strokeSize = size; }
+
+    @Override
+    public JPanel createSettingsPanel(ToolSettingsContext ctx) {
+        return ToolSettingsBuilder.createStrokeSizePanel(strokeSize, this::setStrokeSize);
+    }
 
     @Override
     public void mousePressed(BufferedImage image, int x, int y, DrawingCanvas canvas) {

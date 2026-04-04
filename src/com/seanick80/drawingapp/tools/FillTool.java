@@ -19,12 +19,16 @@ public class FillTool implements Tool {
     private int startX, startY, endX, endY;
 
     @Override public String getName() { return "Fill"; }
+    @Override public boolean hasFill() { return true; }
 
     @Override
     public JPanel createSettingsPanel(ToolSettingsContext ctx) {
-        return ctx.getFillOptionsPanel();
+        return ToolSettingsBuilder.createFillOptionsPanel(
+                ctx.getFillRegistry(), ctx.getGradientToolbar(), false,
+                null, this::setFillProvider);
     }
 
+    @Override
     public void setFillProvider(FillProvider fp) { this.fillProvider = fp; }
 
     @Override

@@ -16,20 +16,24 @@ public class RectangleTool implements Tool {
     private int strokeSize = 2;
 
     @Override public String getName() { return "Rectangle"; }
+    @Override public boolean hasStrokeSize() { return true; }
+    @Override public boolean hasFill() { return true; }
 
     @Override
     public JPanel createSettingsPanel(ToolSettingsContext ctx) {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.add(ctx.getStrokeSizePanel());
+        panel.add(ToolSettingsBuilder.createStrokeSizePanel(strokeSize, this::setStrokeSize));
         panel.add(Box.createVerticalStrut(8));
-        panel.add(ctx.getFillOptionsPanel());
+        panel.add(ToolSettingsBuilder.createFillOptionsPanel(
+                ctx.getFillRegistry(), ctx.getGradientToolbar(), true,
+                this::setFilled, this::setFillProvider));
         return panel;
     }
 
-    public void setFilled(boolean filled) { this.filled = filled; }
-    public void setFillProvider(FillProvider fp) { this.fillProvider = fp; }
-    public void setStrokeSize(int size) { this.strokeSize = size; }
+    @Override public void setFilled(boolean filled) { this.filled = filled; }
+    @Override public void setFillProvider(FillProvider fp) { this.fillProvider = fp; }
+    @Override public void setStrokeSize(int size) { this.strokeSize = size; }
 
     @Override
     public void mousePressed(BufferedImage image, int x, int y, DrawingCanvas canvas) {

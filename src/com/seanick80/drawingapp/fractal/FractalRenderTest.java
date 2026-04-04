@@ -1,9 +1,11 @@
 package com.seanick80.drawingapp.fractal;
 
+import com.seanick80.drawingapp.DrawingCanvas;
 import com.seanick80.drawingapp.UndoManager;
 import com.seanick80.drawingapp.dock.DockManager;
 import com.seanick80.drawingapp.dock.DockablePanel;
 import com.seanick80.drawingapp.fills.*;
+import com.seanick80.drawingapp.tools.*;
 import com.seanick80.drawingapp.gradient.ColorGradient;
 import com.seanick80.drawingapp.layers.BlendComposite;
 import com.seanick80.drawingapp.layers.BlendMode;
@@ -137,6 +139,18 @@ public class FractalRenderTest {
 
         // Dock system tests
         testDockManagerAndDockablePanel();
+
+        // Drawing tool tests
+        testPencilToolDrawsOnCanvas();
+        testLineToolDrawsOnCanvas();
+        testRectangleToolDrawsOutline();
+        testRectangleToolFilled();
+        testOvalToolDrawsOnCanvas();
+        testEraserToolErases();
+        testFillToolFloodFill();
+        testToolDefaultStrokeSizes();
+        testToolNames();
+        testToolCapabilities();
 
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
@@ -2637,6 +2651,177 @@ public class FractalRenderTest {
         check("dockAll: dp3 docked", dp3.isDocked());
 
         frame.dispose();
+    }
+
+    // ---- Drawing Tool Tests ----
+
+    private static boolean isAllColor(BufferedImage img, int rgb) {
+        for (int y = 0; y < img.getHeight(); y++) {
+            for (int x = 0; x < img.getWidth(); x++) {
+                if ((img.getRGB(x, y) & 0x00FFFFFF) != (rgb & 0x00FFFFFF)) return false;
+            }
+        }
+        return true;
+    }
+
+    private static BufferedImage whiteImage(int w, int h) {
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, w, h);
+        g.dispose();
+        return img;
+    }
+
+    private static DrawingCanvas testCanvas(int w, int h) {
+        return new DrawingCanvas(w, h, new UndoManager(10));
+    }
+
+    private static void testPencilToolDrawsOnCanvas() {
+        System.out.println("\n  -- Drawing Tools --");
+        BufferedImage img = whiteImage(100, 100);
+        DrawingCanvas canvas = testCanvas(100, 100);
+        PencilTool pencil = new PencilTool();
+        pencil.setStrokeSize(3);
+        pencil.mousePressed(img, 10, 10, canvas);
+        pencil.mouseDragged(img, 50, 50, canvas);
+        check("PencilTool draws on canvas", !isAllColor(img, 0xFFFFFF));
+        check("PencilTool getName", "Pencil".equals(pencil.getName()));
+        check("PencilTool defaultStrokeSize", pencil.getDefaultStrokeSize() == 2);
+    }
+
+    private static void testLineToolDrawsOnCanvas() {
+        BufferedImage img = whiteImage(100, 100);
+        DrawingCanvas canvas = testCanvas(100, 100);
+        LineTool line = new LineTool();
+        line.setStrokeSize(2);
+        line.mousePressed(img, 0, 0, canvas);
+        line.mouseReleased(img, 99, 99, canvas);
+        // Check pixels along the diagonal changed
+        boolean diagonalChanged = false;
+        for (int i = 10; i < 90; i++) {
+            if ((img.getRGB(i, i) & 0x00FFFFFF) != 0x00FFFFFF) {
+                diagonalChanged = true;
+                break;
+            }
+        }
+        check("LineTool draws along diagonal", diagonalChanged);
+        check("LineTool getName", "Line".equals(line.getName()));
+    }
+
+    private static void testRectangleToolDrawsOutline() {
+        BufferedImage img = whiteImage(100, 100);
+        DrawingCanvas canvas = testCanvas(100, 100);
+        RectangleTool rect = new RectangleTool();
+        rect.setStrokeSize(1);
+        rect.mousePressed(img, 10, 10, canvas);
+        rect.mouseReleased(img, 90, 90, canvas);
+        boolean borderChanged = (img.getRGB(10, 10) & 0x00FFFFFF) != 0x00FFFFFF;
+        boolean interiorWhite = (img.getRGB(50, 50) & 0x00FFFFFF) == 0x00FFFFFF;
+        check("RectangleTool border pixel non-white", borderChanged);
+        check("RectangleTool interior pixel white (outline only)", interiorWhite);
+        check("RectangleTool getName", "Rectangle".equals(rect.getName()));
+    }
+
+    private static void testRectangleToolFilled() {
+        BufferedImage img = whiteImage(100, 100);
+        DrawingCanvas canvas = testCanvas(100, 100);
+        RectangleTool rect = new RectangleTool();
+        rect.setStrokeSize(1);
+        rect.setFilled(true);
+        rect.setFillProvider(new SolidFill());
+        rect.mousePressed(img, 10, 10, canvas);
+        rect.mouseReleased(img, 90, 90, canvas);
+        boolean interiorFilled = (img.getRGB(50, 50) & 0x00FFFFFF) != 0x00FFFFFF;
+        check("RectangleTool filled interior non-white", interiorFilled);
+    }
+
+    private static void testOvalToolDrawsOnCanvas() {
+        BufferedImage img = whiteImage(100, 100);
+        DrawingCanvas canvas = testCanvas(100, 100);
+        OvalTool oval = new OvalTool();
+        oval.setStrokeSize(2);
+        oval.mousePressed(img, 10, 10, canvas);
+        oval.mouseReleased(img, 90, 90, canvas);
+        check("OvalTool draws on canvas", !isAllColor(img, 0xFFFFFF));
+        check("OvalTool getName", "Oval".equals(oval.getName()));
+    }
+
+    private static void testEraserToolErases() {
+        BufferedImage img = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(0, 0, 100, 100);
+        g.dispose();
+        DrawingCanvas canvas = testCanvas(100, 100);
+        EraserTool eraser = new EraserTool();
+        eraser.setSize(20);
+        eraser.mousePressed(img, 50, 50, canvas);
+        int pixel = img.getRGB(50, 50) & 0x00FFFFFF;
+        int red = 0xFF0000;
+        check("EraserTool erases pixel (no longer red)", pixel != red);
+        check("EraserTool getName", "Eraser".equals(eraser.getName()));
+        check("EraserTool defaultStrokeSize", eraser.getDefaultStrokeSize() == 18);
+    }
+
+    private static void testFillToolFloodFill() {
+        BufferedImage img = whiteImage(100, 100);
+        // Draw a black rectangle border
+        Graphics2D g = img.createGraphics();
+        g.setColor(Color.BLACK);
+        g.setStroke(new BasicStroke(2));
+        g.drawRect(20, 20, 60, 60);
+        g.dispose();
+
+        DrawingCanvas canvas = testCanvas(100, 100);
+        FillTool fill = new FillTool();
+        fill.setFillProvider(new SolidFill());
+        // Canvas foreground is BLACK by default (no colorPicker set)
+        // so flood fill interior with black
+        fill.mousePressed(img, 50, 50, canvas);
+        int pixel = img.getRGB(50, 50) & 0x00FFFFFF;
+        check("FillTool flood fills interior", pixel != 0xFFFFFF);
+        check("FillTool getName", "Fill".equals(fill.getName()));
+    }
+
+    private static void testToolDefaultStrokeSizes() {
+        check("Pencil defaultStrokeSize=2", new PencilTool().getDefaultStrokeSize() == 2);
+        check("Line defaultStrokeSize=2", new LineTool().getDefaultStrokeSize() == 2);
+        check("Rectangle defaultStrokeSize=2", new RectangleTool().getDefaultStrokeSize() == 2);
+        check("Oval defaultStrokeSize=2", new OvalTool().getDefaultStrokeSize() == 2);
+        check("Eraser defaultStrokeSize=18", new EraserTool().getDefaultStrokeSize() == 18);
+        check("Fill defaultStrokeSize=2", new FillTool().getDefaultStrokeSize() == 2);
+        check("Fractal defaultStrokeSize=1", new FractalTool().getDefaultStrokeSize() == 1);
+    }
+
+    private static void testToolCapabilities() {
+        // hasStrokeSize
+        check("Pencil hasStrokeSize", new PencilTool().hasStrokeSize());
+        check("Line hasStrokeSize", new LineTool().hasStrokeSize());
+        check("Rectangle hasStrokeSize", new RectangleTool().hasStrokeSize());
+        check("Oval hasStrokeSize", new OvalTool().hasStrokeSize());
+        check("Eraser hasStrokeSize", new EraserTool().hasStrokeSize());
+        check("Fill !hasStrokeSize", !new FillTool().hasStrokeSize());
+        check("Fractal !hasStrokeSize", !new FractalTool().hasStrokeSize());
+
+        // hasFill
+        check("Pencil !hasFill", !new PencilTool().hasFill());
+        check("Line !hasFill", !new LineTool().hasFill());
+        check("Rectangle hasFill", new RectangleTool().hasFill());
+        check("Oval hasFill", new OvalTool().hasFill());
+        check("Eraser !hasFill", !new EraserTool().hasFill());
+        check("Fill hasFill", new FillTool().hasFill());
+        check("Fractal !hasFill", !new FractalTool().hasFill());
+    }
+
+    private static void testToolNames() {
+        check("PencilTool name", "Pencil".equals(new PencilTool().getName()));
+        check("LineTool name", "Line".equals(new LineTool().getName()));
+        check("RectangleTool name", "Rectangle".equals(new RectangleTool().getName()));
+        check("OvalTool name", "Oval".equals(new OvalTool().getName()));
+        check("EraserTool name", "Eraser".equals(new EraserTool().getName()));
+        check("FillTool name", "Fill".equals(new FillTool().getName()));
+        check("FractalTool name", "Fractal".equals(new FractalTool().getName()));
     }
 
     private static void check(String name, boolean condition) {

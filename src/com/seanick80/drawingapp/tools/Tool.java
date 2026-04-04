@@ -1,6 +1,7 @@
 package com.seanick80.drawingapp.tools;
 
 import com.seanick80.drawingapp.DrawingCanvas;
+import com.seanick80.drawingapp.fills.FillProvider;
 import javax.swing.JMenu;
 import javax.swing.JPanel;
 import java.awt.Graphics2D;
@@ -27,6 +28,21 @@ public interface Tool {
 
     /** Default stroke size for this tool. */
     default int getDefaultStrokeSize() { return 2; }
+
+    /** Whether this tool supports stroke size adjustment. */
+    default boolean hasStrokeSize() { return false; }
+
+    /** Set the stroke size. Tools that support stroke size should override this. */
+    default void setStrokeSize(int size) {}
+
+    /** Whether this tool supports fill settings. */
+    default boolean hasFill() { return false; }
+
+    /** Set whether shapes are filled. */
+    default void setFilled(boolean filled) {}
+
+    /** Set the fill provider. */
+    default void setFillProvider(FillProvider provider) {}
 
     /**
      * Build a custom settings panel for this tool.

@@ -1,5 +1,7 @@
 package com.seanick80.drawingapp.tools;
 
+import com.seanick80.drawingapp.fills.FillRegistry;
+import com.seanick80.drawingapp.gradient.GradientToolbar;
 import javax.swing.JPanel;
 
 /**
@@ -12,4 +14,10 @@ public interface ToolSettingsContext {
 
     /** Panel with fill checkbox + fill type dropdown. */
     JPanel getFillOptionsPanel();
+
+    /** The fill registry for creating fill option panels. */
+    FillRegistry getFillRegistry();
+
+    /** The gradient toolbar for gradient sync. */
+    GradientToolbar getGradientToolbar();
 }

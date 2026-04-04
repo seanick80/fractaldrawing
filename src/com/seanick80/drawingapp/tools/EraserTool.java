@@ -1,6 +1,7 @@
 package com.seanick80.drawingapp.tools;
 
 import com.seanick80.drawingapp.DrawingCanvas;
+import javax.swing.JPanel;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 
@@ -11,8 +12,17 @@ public class EraserTool implements Tool {
 
     @Override public String getName() { return "Eraser"; }
     @Override public int getDefaultStrokeSize() { return 18; }
+    @Override public boolean hasStrokeSize() { return true; }
 
     public void setSize(int size) { this.size = size; }
+
+    @Override
+    public void setStrokeSize(int size) { setSize(size); }
+
+    @Override
+    public JPanel createSettingsPanel(ToolSettingsContext ctx) {
+        return ToolSettingsBuilder.createStrokeSizePanel(size, this::setSize);
+    }
 
     @Override
     public void mousePressed(BufferedImage image, int x, int y, DrawingCanvas canvas) {
