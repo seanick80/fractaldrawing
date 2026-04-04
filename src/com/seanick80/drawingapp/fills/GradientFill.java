@@ -1,7 +1,6 @@
 package com.seanick80.drawingapp.fills;
 
 import java.awt.*;
-import java.awt.image.BufferedImage;
 
 public class GradientFill implements AngledFillProvider {
     private int angleDegrees = 0;
