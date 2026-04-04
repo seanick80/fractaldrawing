@@ -134,9 +134,9 @@ public class ToolSettingsBuilder {
 
 ---
 
-## Proposal 3: Split FractalTool into Rendering Core vs. UI Controller
+## ~~Proposal 3: Split FractalTool into Rendering Core vs. UI Controller~~ DONE (2026-04-04)
 
-**Problem**: FractalTool is 660 lines doing six distinct jobs:
+**Problem**: FractalTool was 660 lines doing six distinct jobs:
 
 | Responsibility | Lines | Should Be |
 |---|---|---|
