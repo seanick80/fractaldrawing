@@ -109,6 +109,16 @@ public class FractalRenderTest {
         testCustomGradientFill();
         testCheckerboardFill();
         testDiagonalStripeFill();
+        testCrosshatchFill();
+        testDotGridFill();
+        testHorizontalStripeFill();
+        testNoiseFill();
+
+        // Stroke style tests
+        testStrokeStyleEnum();
+        testStrokeStyleCreateStroke();
+        testPencilToolStrokeStyle();
+        testLineToolStrokeStyle();
 
         // ColorGradient tests
         testColorGradientInterpolation();
@@ -1986,6 +1996,210 @@ public class FractalRenderTest {
         check("stripe zero width returns base color", pZero.equals(Color.BLUE));
 
         check("stripe implements AngledFillProvider", fill instanceof AngledFillProvider);
+    }
+
+    private static void testCrosshatchFill() {
+        CrosshatchFill fill = new CrosshatchFill();
+        check("crosshatch fill name", "Crosshatch".equals(fill.getName()));
+        check("crosshatch default angle is 45", fill.getAngleDegrees() == 45);
+
+        fill.setAngleDegrees(30);
+        check("crosshatch angle set to 30", fill.getAngleDegrees() == 30);
+
+        Paint p = fill.createPaint(Color.RED, 0, 0, 100, 100);
+        check("crosshatch returns TexturePaint", p instanceof TexturePaint);
+
+        Paint pZero = fill.createPaint(Color.RED, 0, 0, 0, 100);
+        check("crosshatch zero width returns base color", pZero.equals(Color.RED));
+
+        check("crosshatch implements AngledFillProvider", fill instanceof AngledFillProvider);
+
+        // Verify pattern has drawn content (not all transparent)
+        TexturePaint tp = (TexturePaint) p;
+        BufferedImage tex = tp.getImage();
+        int nonTransparent = 0;
+        for (int y = 0; y < tex.getHeight(); y++)
+            for (int x = 0; x < tex.getWidth(); x++)
+                if ((tex.getRGB(x, y) >>> 24) > 0) nonTransparent++;
+        check("crosshatch has drawn content", nonTransparent > 0);
+    }
+
+    private static void testDotGridFill() {
+        DotGridFill fill = new DotGridFill();
+        check("dot grid fill name", "Dot Grid".equals(fill.getName()));
+
+        Paint p = fill.createPaint(Color.GREEN, 0, 0, 100, 100);
+        check("dot grid returns TexturePaint", p instanceof TexturePaint);
+
+        check("dot grid is not angled", !(fill instanceof AngledFillProvider));
+
+        // Verify dots are present
+        TexturePaint tp = (TexturePaint) p;
+        BufferedImage tex = tp.getImage();
+        int centerRGB = tex.getRGB(tex.getWidth() / 2, tex.getHeight() / 2);
+        int centerAlpha = (centerRGB >>> 24);
+        check("dot grid center has dot (alpha>0)", centerAlpha > 0);
+    }
+
+    private static void testHorizontalStripeFill() {
+        HorizontalStripeFill fill = new HorizontalStripeFill();
+        check("horiz stripe fill name", "Horizontal Stripes".equals(fill.getName()));
+        check("horiz stripe default angle is 0", fill.getAngleDegrees() == 0);
+
+        fill.setAngleDegrees(90);
+        check("horiz stripe angle set to 90", fill.getAngleDegrees() == 90);
+
+        Paint p = fill.createPaint(Color.BLUE, 0, 0, 100, 100);
+        check("horiz stripe returns TexturePaint", p instanceof TexturePaint);
+
+        Paint pZero = fill.createPaint(Color.BLUE, 0, 0, 0, 100);
+        check("horiz stripe zero width returns base color", pZero.equals(Color.BLUE));
+
+        check("horiz stripe implements AngledFillProvider", fill instanceof AngledFillProvider);
+    }
+
+    private static void testNoiseFill() {
+        NoiseFill fill = new NoiseFill();
+        check("noise fill name", "Noise".equals(fill.getName()));
+
+        Paint p = fill.createPaint(Color.RED, 0, 0, 100, 100);
+        check("noise returns TexturePaint", p instanceof TexturePaint);
+
+        check("noise is not angled", !(fill instanceof AngledFillProvider));
+
+        // Verify noise pattern has varied alpha values
+        TexturePaint tp = (TexturePaint) p;
+        BufferedImage tex = tp.getImage();
+        int minAlpha = 255, maxAlpha = 0;
+        for (int y = 0; y < tex.getHeight(); y++) {
+            for (int x = 0; x < tex.getWidth(); x++) {
+                int alpha = (tex.getRGB(x, y) >>> 24);
+                minAlpha = Math.min(minAlpha, alpha);
+                maxAlpha = Math.max(maxAlpha, alpha);
+            }
+        }
+        check("noise has alpha variation", maxAlpha - minAlpha > 50);
+
+        // Deterministic at same position
+        Paint p2 = fill.createPaint(Color.RED, 0, 0, 100, 100);
+        TexturePaint tp2 = (TexturePaint) p2;
+        check("noise is deterministic at same position",
+                tp.getImage().getRGB(0, 0) == tp2.getImage().getRGB(0, 0));
+    }
+
+    // === Stroke Style Tests ===
+
+    private static void testStrokeStyleEnum() {
+        System.out.println("\n  -- Stroke Styles --");
+        StrokeStyle[] styles = StrokeStyle.values();
+        check("5 stroke styles", styles.length == 5);
+        check("SOLID display name", "Solid".equals(StrokeStyle.SOLID.getDisplayName()));
+        check("DASHED display name", "Dashed".equals(StrokeStyle.DASHED.getDisplayName()));
+        check("DOTTED display name", "Dotted".equals(StrokeStyle.DOTTED.getDisplayName()));
+        check("DASH_DOT display name", "Dash-Dot".equals(StrokeStyle.DASH_DOT.getDisplayName()));
+        check("ROUGH display name", "Rough".equals(StrokeStyle.ROUGH.getDisplayName()));
+    }
+
+    private static void testStrokeStyleCreateStroke() {
+        for (StrokeStyle style : StrokeStyle.values()) {
+            java.awt.Stroke stroke = style.createStroke(4);
+            check(style.getDisplayName() + " creates non-null stroke", stroke != null);
+        }
+        // Dashed stroke should have dash array
+        java.awt.Stroke dashed = StrokeStyle.DASHED.createStroke(2);
+        check("DASHED is BasicStroke", dashed instanceof java.awt.BasicStroke);
+        float[] dashArray = ((java.awt.BasicStroke) dashed).getDashArray();
+        check("DASHED has dash array", dashArray != null && dashArray.length > 0);
+
+        // Solid has no dash array
+        java.awt.Stroke solid = StrokeStyle.SOLID.createStroke(2);
+        float[] solidDash = ((java.awt.BasicStroke) solid).getDashArray();
+        check("SOLID has no dash array", solidDash == null);
+    }
+
+    private static void testPencilToolStrokeStyle() {
+        PencilTool pencil = new PencilTool();
+        check("pencil default stroke style is SOLID", pencil.getStrokeStyle() == StrokeStyle.SOLID);
+
+        pencil.setStrokeStyle(StrokeStyle.DASHED);
+        check("pencil stroke style set to DASHED", pencil.getStrokeStyle() == StrokeStyle.DASHED);
+
+        // Draw with dashed style - should not crash
+        BufferedImage img = new BufferedImage(50, 50, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, 50, 50);
+        g.dispose();
+
+        DrawingCanvas canvas = new DrawingCanvas(50, 50, new com.seanick80.drawingapp.UndoManager(10));
+        pencil.mousePressed(img, 5, 25, canvas);
+        pencil.mouseDragged(img, 45, 25, canvas);
+        pencil.mouseReleased(img, 45, 25, canvas);
+
+        // Verify something was drawn
+        boolean hasBlack = false;
+        for (int x = 0; x < 50; x++) {
+            if (img.getRGB(x, 25) != Color.WHITE.getRGB()) { hasBlack = true; break; }
+        }
+        check("pencil dashed draws on canvas", hasBlack);
+
+        // Test rough style
+        pencil.setStrokeStyle(StrokeStyle.ROUGH);
+        BufferedImage img2 = new BufferedImage(50, 50, BufferedImage.TYPE_INT_RGB);
+        g = img2.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, 50, 50);
+        g.dispose();
+        pencil.mousePressed(img2, 5, 25, canvas);
+        pencil.mouseDragged(img2, 45, 25, canvas);
+        pencil.mouseReleased(img2, 45, 25, canvas);
+
+        hasBlack = false;
+        for (int x = 0; x < 50; x++) {
+            if (img2.getRGB(x, 25) != Color.WHITE.getRGB()) { hasBlack = true; break; }
+        }
+        check("pencil rough draws on canvas", hasBlack);
+    }
+
+    private static void testLineToolStrokeStyle() {
+        LineTool line = new LineTool();
+        check("line default stroke style is SOLID", line.getStrokeStyle() == StrokeStyle.SOLID);
+
+        line.setStrokeStyle(StrokeStyle.DOTTED);
+        check("line stroke style set to DOTTED", line.getStrokeStyle() == StrokeStyle.DOTTED);
+
+        // Draw with dotted style
+        BufferedImage img = new BufferedImage(50, 50, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, 50, 50);
+        g.dispose();
+
+        DrawingCanvas canvas = new DrawingCanvas(50, 50, new com.seanick80.drawingapp.UndoManager(10));
+        line.mousePressed(img, 5, 25, canvas);
+        line.mouseReleased(img, 45, 25, canvas);
+
+        boolean hasBlack = false;
+        for (int x = 0; x < 50; x++) {
+            if (img.getRGB(x, 25) != Color.WHITE.getRGB()) { hasBlack = true; break; }
+        }
+        check("line dotted draws on canvas", hasBlack);
+
+        // Test rough style
+        line.setStrokeStyle(StrokeStyle.ROUGH);
+        BufferedImage img2 = new BufferedImage(50, 50, BufferedImage.TYPE_INT_RGB);
+        g = img2.createGraphics();
+        g.setColor(Color.WHITE);
+        g.fillRect(0, 0, 50, 50);
+        g.dispose();
+        line.mousePressed(img2, 5, 25, canvas);
+        line.mouseReleased(img2, 45, 25, canvas);
+
+        hasBlack = false;
+        for (int x = 0; x < 50; x++) {
+            if (img2.getRGB(x, 25) != Color.WHITE.getRGB()) { hasBlack = true; break; }
+        }
+        check("line rough draws on canvas", hasBlack);
     }
 
     // === ColorGradient Extended Tests ===

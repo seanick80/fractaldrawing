@@ -35,45 +35,14 @@ Enhanced line/stroke settings for all shape and line tools:
 - **Stroke textures**: Natural media effects (chalk, charcoal, marker, watercolor) applied along the stroke path. Implemented as BufferedImage-based brush tips stamped at intervals along the path with jitter for a natural look.
 
 ### Textures and patterns
-Texture system for both strokes and fills:
-- **Stroke textures** — natural media brush tips (chalk, charcoal, marker, crayon, watercolor) that replace the solid stroke for pencil, line, rectangle, oval, and brush tools. Tip images stamped along the path with configurable spacing, opacity variance, and rotation jitter.
-- **Pattern fills** — tileable patterns (brick, wood, stone, fabric, crosshatch, dots) usable as fill providers for shapes and the fill tool. Registered alongside existing fills (solid, gradient, checkerboard, etc.) via FillRegistry. Users can also load custom pattern images from file.
-- Both stroke textures and pattern fills should support colorization (tint the texture with the current foreground color).
+**Phase 1 (done):** Pattern fills (crosshatch, dot grid, horizontal stripes, noise) and stroke styles (solid, dashed, dotted, dash-dot, rough/sketchy) for pencil and line tools.
+
+**Phase 2 (future):** Natural media brush tips (chalk, charcoal, marker, crayon, watercolor) stamped along the path with configurable spacing, opacity variance, and rotation jitter. Custom pattern image loading from file. Colorization support.
 
 ## UI fit and finish (backlog)
 
-### FDP project file format
-Custom project file format (.fdp) for lossless save/restore of the full application state. Use a proven serialization library (e.g., Google Protobuf) to minimize custom parsing logic and ensure forward compatibility as new features are added.
-
-**Contents:**
-- Canvas dimensions
-- All layers (pixel data, name, opacity, visibility, lock state, blend mode, order)
-- Undo history (up to N states)
-- Active tool and tool settings
-- Fractal state (type, bounds, iterations, gradient, Julia constant if applicable)
-- Selection state (if selection tool is active)
-
-**UI integration:**
-- Save/Open dialogs show named file type filters (PNG, JPEG, BMP, FDP) instead of "All Files"
-- Selecting FDP preserves full project state; selecting an image format flattens all layers on export
-- File > Open auto-detects FDP vs image formats
-
-**Testing:**
-- Round-trip serialization/parsing tests for every supported field (layers, undo, fractal settings, gradients, etc.)
-- When a new feature adds state to the project (e.g., new tool settings, selection data), a corresponding FDP serialization test case must be added
-- Backward compatibility tests: older FDP files missing new fields should load with sensible defaults
-
 ### View menu with zoom controls
 Add a View menu with: Zoom In, Zoom Out, Zoom to Fit, Reset Zoom (1:1), and Zoom Rectangle (drag a rect on canvas to zoom into that region). Provides keyboard/menu alternatives to mouse wheel zoom.
-
-### Screensaver mode
-Full-screen mode (via View menu) that cycles through random interesting Mandelbrot locations. Renders each location at screen resolution, displays for a configurable timer (e.g. 10-30 seconds), then smoothly transitions to the next. Exits on any key press or mouse movement. Reuses the "I Feel Lucky" location finder.
-
-## Animations
-*   Iteration animation - add one iteration, display it, add another, etc - up to the point where not many iterations are present anymore. Save the resulting iteration slides as a video which can be played back.
-*   Palette cycle animation
-
-My previous version of this app had these features as selectable animations, as a screen saver.
 
 ## Fractal types (not yet implemented)
 

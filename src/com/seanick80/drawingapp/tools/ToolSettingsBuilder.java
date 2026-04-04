@@ -83,6 +83,57 @@ public class ToolSettingsBuilder {
     }
 
     /**
+     * Creates a stroke style panel with a combo box for selecting stroke styles
+     * and a preview of the current stroke.
+     */
+    public static JPanel createStrokeStylePanel(StrokeStyle defaultStyle, Consumer<StrokeStyle> onChange) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel styleLabel = new JLabel("Stroke:");
+        styleLabel.setFont(styleLabel.getFont().deriveFont(Font.BOLD, 11f));
+        styleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.add(styleLabel);
+        panel.add(Box.createVerticalStrut(2));
+
+        JComboBox<StrokeStyle> styleCombo = new JComboBox<>(StrokeStyle.values());
+        styleCombo.setSelectedItem(defaultStyle);
+        styleCombo.setMaximumSize(new Dimension(120, 28));
+        styleCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel preview = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                StrokeStyle style = (StrokeStyle) styleCombo.getSelectedItem();
+                g2.setStroke(style.createStroke(2));
+                g2.setColor(Color.BLACK);
+                int cy = getHeight() / 2;
+                g2.drawLine(4, cy, getWidth() - 4, cy);
+            }
+        };
+        preview.setPreferredSize(new Dimension(120, 20));
+        preview.setMinimumSize(new Dimension(120, 20));
+        preview.setMaximumSize(new Dimension(120, 20));
+        preview.setBackground(Color.WHITE);
+        preview.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+        preview.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        styleCombo.addActionListener(e -> {
+            if (onChange != null) onChange.accept((StrokeStyle) styleCombo.getSelectedItem());
+            preview.repaint();
+        });
+
+        panel.add(styleCombo);
+        panel.add(Box.createVerticalStrut(4));
+        panel.add(preview);
+        return panel;
+    }
+
+    /**
      * Creates a fill options panel with checkbox, fill type combo, angle dial,
      * and gradient preview.
      *

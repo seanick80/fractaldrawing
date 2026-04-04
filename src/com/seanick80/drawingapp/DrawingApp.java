@@ -128,6 +128,10 @@ public class DrawingApp extends JFrame {
         fillRegistry.register(new CustomGradientFill());
         fillRegistry.register(new CheckerboardFill());
         fillRegistry.register(new DiagonalStripeFill());
+        fillRegistry.register(new CrosshatchFill());
+        fillRegistry.register(new DotGridFill());
+        fillRegistry.register(new HorizontalStripeFill());
+        fillRegistry.register(new NoiseFill());
     }
 
     private JMenuBar createMenuBar(DockablePanel... dockablePanels) {
