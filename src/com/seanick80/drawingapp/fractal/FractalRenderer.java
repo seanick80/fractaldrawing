@@ -246,6 +246,27 @@ public class FractalRenderer {
     public int getPrevRenderCacheHits() { return prevRenderCacheHits; }
 
     /**
+     * Re-color a previously computed iteration buffer using a new gradient,
+     * without recomputing iterations. Useful for palette cycle animation.
+     *
+     * @param iters  iteration counts (width*height array)
+     * @param width  image width
+     * @param height image height
+     * @param gradient the gradient to color with
+     * @return a new BufferedImage colored from the iteration data
+     */
+    public BufferedImage recolorFromIters(int[] iters, int width, int height, ColorGradient gradient) {
+        FractalColorMapper mapper = buildColorMapper(gradient);
+        int[] rgb = new int[width * height];
+        for (int i = 0; i < rgb.length; i++) {
+            rgb[i] = mapper.colorForIter(iters[i]);
+        }
+        BufferedImage img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        img.setRGB(0, 0, width, height, rgb, 0, width);
+        return img;
+    }
+
+    /**
      * Map new pixel coordinates to previous render pixel positions.
      * For each new column/row, finds the nearest old column/row via BigDecimal
      * division, then checks if the coordinate distance is within tolerance.

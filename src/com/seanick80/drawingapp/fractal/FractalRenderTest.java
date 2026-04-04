@@ -152,6 +152,18 @@ public class FractalRenderTest {
         testToolNames();
         testToolCapabilities();
 
+        // Animation tests
+        testRecolorFromIters();
+        testRecolorDifferentGradientDiffers();
+        testPaletteCycleShiftGradient();
+        testPaletteCycleFullRotationWraps();
+        testPaletteCycleRenderToFiles();
+        testIterationAnimatorFramesDiffer();
+        testIterationAnimatorRenderToFiles();
+        testIterationAnimatorCancel();
+        testIterationAnimatorTotalFrames();
+        testPaletteCycleRecolorMatchesDirectRender();
+
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
         if (failed > 0) {
@@ -2822,6 +2834,202 @@ public class FractalRenderTest {
         check("EraserTool name", "Eraser".equals(new EraserTool().getName()));
         check("FillTool name", "Fill".equals(new FillTool().getName()));
         check("FractalTool name", "Fractal".equals(new FractalTool().getName()));
+    }
+
+    // === Animation Tests ===
+
+    private static void testRecolorFromIters() {
+        FractalRenderer r = newRenderer();
+        ColorGradient grad = gradient();
+        BufferedImage img = r.render(SIZE, SIZE, grad);
+        int[] iters = r.getLastRenderIters();
+        int[] size = r.getLastRenderSize();
+
+        // Recolor with same gradient should produce identical image
+        BufferedImage recolored = r.recolorFromIters(iters, size[0], size[1], grad);
+        check("recolorFromIters matches original", imagesEqual(img, recolored));
+    }
+
+    private static void testRecolorDifferentGradientDiffers() {
+        FractalRenderer r = newRenderer();
+        ColorGradient grad1 = gradient();
+        r.render(SIZE, SIZE, grad1);
+        int[] iters = r.getLastRenderIters();
+        int[] size = r.getLastRenderSize();
+
+        BufferedImage img1 = r.recolorFromIters(iters, size[0], size[1], grad1);
+
+        // Different gradient should produce different image
+        ColorGradient grad2 = ColorGradient.fromBaseColor(java.awt.Color.RED);
+        BufferedImage img2 = r.recolorFromIters(iters, size[0], size[1], grad2);
+        check("recolor different gradient differs", !imagesEqual(img1, img2));
+    }
+
+    private static void testPaletteCycleShiftGradient() {
+        ColorGradient grad = gradient();
+        int stopCount = grad.getStops().size();
+
+        // Shift by 0 should produce gradient with same number of stops
+        ColorGradient shifted0 = PaletteCycleAnimator.shiftGradient(grad, 0f);
+        check("shift 0 preserves stop count", shifted0.getStops().size() == stopCount);
+
+        // Shift by 0.5 should produce different colors at position 0
+        ColorGradient shifted50 = PaletteCycleAnimator.shiftGradient(grad, 0.5f);
+        check("shift 0.5 preserves stop count", shifted50.getStops().size() == stopCount);
+
+        // All positions should be in [0, 1]
+        boolean allValid = true;
+        for (ColorGradient.Stop s : shifted50.getStops()) {
+            if (s.getPosition() < 0f || s.getPosition() > 1f) {
+                allValid = false;
+                break;
+            }
+        }
+        check("shifted positions in [0,1]", allValid);
+    }
+
+    private static void testPaletteCycleFullRotationWraps() {
+        ColorGradient grad = gradient();
+        // Shift by 1.0 should wrap back to original positions
+        ColorGradient shifted = PaletteCycleAnimator.shiftGradient(grad, 1.0f);
+        boolean positionsMatch = true;
+        for (int i = 0; i < grad.getStops().size(); i++) {
+            float origPos = grad.getStops().get(i).getPosition();
+            float shiftedPos = shifted.getStops().get(i).getPosition();
+            if (Math.abs(origPos - shiftedPos) > 0.001f) {
+                positionsMatch = false;
+                break;
+            }
+        }
+        check("shift by 1.0 wraps to original", positionsMatch);
+    }
+
+    private static void testPaletteCycleRenderToFiles() {
+        FractalRenderer r = newRenderer();
+        ColorGradient grad = gradient();
+        r.render(SIZE, SIZE, grad);
+        int[] iters = r.getLastRenderIters().clone();
+        int[] size = r.getLastRenderSize();
+
+        PaletteCycleAnimator animator = new PaletteCycleAnimator(r);
+        animator.setTotalFrames(5);
+        animator.setFps(10);
+        animator.setCycleSpeed(1.0f);
+
+        File tmpDir = new File(System.getProperty("java.io.tmpdir"), "palette_cycle_test_" + System.currentTimeMillis());
+        try {
+            int count = animator.renderToFiles(tmpDir, iters, size[0], size[1], grad, null);
+            check("palette cycle renders frames", count == 5);
+
+            File aviFile = new File(tmpDir, "palette_cycle.avi");
+            check("palette cycle AVI exists", aviFile.exists());
+            check("palette cycle AVI non-empty", aviFile.length() > 0);
+        } catch (Exception e) {
+            check("palette cycle renderToFiles no exception: " + e.getMessage(), false);
+        } finally {
+            deleteDir(tmpDir);
+        }
+    }
+
+    private static void testIterationAnimatorFramesDiffer() {
+        FractalRenderer r = newRenderer();
+        ColorGradient grad = gradient();
+
+        // Render at iter=1 and iter=256 should differ
+        r.setMaxIterations(1);
+        BufferedImage img1 = r.render(SIZE, SIZE, grad);
+        r.setMaxIterations(256);
+        BufferedImage img256 = r.render(SIZE, SIZE, grad);
+        check("iter 1 vs 256 differ", !imagesEqual(img1, img256));
+    }
+
+    private static void testIterationAnimatorRenderToFiles() {
+        FractalRenderer r = newRenderer();
+        ColorGradient grad = gradient();
+
+        IterationAnimator animator = new IterationAnimator();
+        animator.setStartIter(1);
+        animator.setEndIter(10);
+        animator.setStep(3);
+        animator.setSize(50, 50);
+        animator.setFps(10);
+
+        File tmpDir = new File(System.getProperty("java.io.tmpdir"), "iter_anim_test_" + System.currentTimeMillis());
+        try {
+            int count = animator.renderToFiles(tmpDir, r, grad, null);
+            // Frames: iter 1, 4, 7, 10 = 4 frames
+            check("iteration animator frame count", count == 4);
+
+            File aviFile = new File(tmpDir, "iteration_anim.avi");
+            check("iteration animator AVI exists", aviFile.exists());
+            check("iteration animator AVI non-empty", aviFile.length() > 0);
+        } catch (Exception e) {
+            check("iteration animator renderToFiles no exception: " + e.getMessage(), false);
+        } finally {
+            deleteDir(tmpDir);
+        }
+    }
+
+    private static void testIterationAnimatorCancel() {
+        FractalRenderer r = newRenderer();
+        ColorGradient grad = gradient();
+
+        IterationAnimator animator = new IterationAnimator();
+        animator.setStartIter(1);
+        animator.setEndIter(100);
+        animator.setStep(1);
+        animator.setSize(20, 20);
+        animator.setFps(10);
+
+        // Cancel immediately
+        animator.cancel();
+
+        File tmpDir = new File(System.getProperty("java.io.tmpdir"), "iter_cancel_test_" + System.currentTimeMillis());
+        try {
+            int count = animator.renderToFiles(tmpDir, r, grad, null);
+            check("iteration animator cancel produces 0 frames", count == 0);
+        } catch (Exception e) {
+            check("iteration animator cancel no exception: " + e.getMessage(), false);
+        } finally {
+            deleteDir(tmpDir);
+        }
+    }
+
+    private static void testIterationAnimatorTotalFrames() {
+        IterationAnimator animator = new IterationAnimator();
+        animator.setStartIter(1);
+        animator.setEndIter(256);
+        animator.setStep(1);
+        check("total frames 1-256 step 1", animator.getTotalFrames() == 256);
+
+        animator.setStep(5);
+        check("total frames 1-256 step 5", animator.getTotalFrames() == 52);
+
+        animator.setStartIter(10);
+        animator.setEndIter(50);
+        animator.setStep(10);
+        check("total frames 10-50 step 10", animator.getTotalFrames() == 5);
+    }
+
+    private static void testPaletteCycleRecolorMatchesDirectRender() {
+        // Verify that recolorFromIters with the original gradient produces
+        // the same image as a direct render (sanity check for the pipeline)
+        FractalRenderer r = newRenderer();
+        r.setMaxIterations(64);
+        ColorGradient grad = gradient();
+        BufferedImage direct = r.render(50, 50, grad);
+        int[] iters = r.getLastRenderIters().clone();
+        BufferedImage recolored = r.recolorFromIters(iters, 50, 50, grad);
+        check("recolor matches direct render (64 iter)", imagesEqual(direct, recolored));
+    }
+
+    private static void deleteDir(File dir) {
+        if (dir == null || !dir.exists()) return;
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) f.delete();
+        }
+        dir.delete();
     }
 
     private static void check(String name, boolean condition) {
