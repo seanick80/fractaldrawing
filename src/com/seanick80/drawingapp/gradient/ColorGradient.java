@@ -29,6 +29,14 @@ public class ColorGradient {
 
     private final List<Stop> stops = new ArrayList<>();
 
+    /** Replace this gradient's stops with copies from another gradient. */
+    public void copyFrom(ColorGradient other) {
+        stops.clear();
+        for (Stop s : other.stops) {
+            stops.add(new Stop(s.getPosition(), s.getColor()));
+        }
+    }
+
     public ColorGradient() {
         // Default: black to white
         stops.add(new Stop(0f, Color.BLACK));

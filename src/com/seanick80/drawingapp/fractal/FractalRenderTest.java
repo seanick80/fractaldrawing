@@ -112,6 +112,8 @@ public class FractalRenderTest {
         testColorGradientFromBaseColor();
         testColorGradientSaveLoad();
         testColorGradientCopyConstructor();
+        testColorGradientCopyFrom();
+        testSharedGradient();
 
         // UndoManager tests
         testUndoManagerBasic();
@@ -2081,6 +2083,50 @@ public class FractalRenderTest {
         ColorGradient copy2 = new ColorGradient(original);
         Color copyMid = copy2.getColorAt(0.5f);
         check("copy produces same colors", origMid.getRGB() == copyMid.getRGB());
+    }
+
+    private static void testColorGradientCopyFrom() {
+        ColorGradient target = new ColorGradient(); // default black-to-white
+        ColorGradient source = ColorGradient.fromBaseColor(Color.RED);
+        int sourceStops = source.getStops().size();
+
+        target.copyFrom(source);
+        check("copyFrom has same stop count", target.getStops().size() == sourceStops);
+
+        // Colors match after copyFrom
+        boolean colorsMatch = true;
+        for (float t = 0; t <= 1.0f; t += 0.1f) {
+            Color tc = target.getColorAt(t);
+            Color sc = source.getColorAt(t);
+            if (Math.abs(tc.getRed() - sc.getRed()) > 1
+                    || Math.abs(tc.getGreen() - sc.getGreen()) > 1
+                    || Math.abs(tc.getBlue() - sc.getBlue()) > 1) {
+                colorsMatch = false;
+                break;
+            }
+        }
+        check("copyFrom produces same colors", colorsMatch);
+
+        // Modifying target doesn't affect source
+        target.addStop(0.5f, Color.CYAN);
+        check("copyFrom is independent", source.getStops().size() == sourceStops);
+    }
+
+    private static void testSharedGradient() {
+        // Verify that editing a shared gradient object is reflected by all users
+        ColorGradient shared = ColorGradient.fractalDefault();
+        Color beforeMid = shared.getColorAt(0.5f);
+
+        // Simulate in-place update (like color picker changing gradient)
+        ColorGradient replacement = ColorGradient.fromBaseColor(Color.BLUE);
+        shared.copyFrom(replacement);
+        Color afterMid = shared.getColorAt(0.5f);
+
+        check("shared gradient update changes colors", beforeMid.getRGB() != afterMid.getRGB());
+
+        // A second reference to the same object sees the change
+        ColorGradient ref = shared;
+        check("shared ref sees update", ref.getColorAt(0.5f).getRGB() == afterMid.getRGB());
     }
 
     // === UndoManager Tests ===

@@ -196,6 +196,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
             drawing = false;
             activeTool.mouseReleased(getActiveLayerImage(), toImageX(e.getX()), toImageY(e.getY()), this);
             repaint();
+            layerManager.fireChange();
         }
     }
 

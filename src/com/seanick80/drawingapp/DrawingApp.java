@@ -3,6 +3,7 @@ package com.seanick80.drawingapp;
 import com.seanick80.drawingapp.dock.DockManager;
 import com.seanick80.drawingapp.dock.DockablePanel;
 import com.seanick80.drawingapp.fills.*;
+import com.seanick80.drawingapp.gradient.GradientToolbar;
 import com.seanick80.drawingapp.layers.LayerManager;
 import com.seanick80.drawingapp.layers.LayerPanel;
 import com.seanick80.drawingapp.tools.*;
@@ -37,7 +38,8 @@ public class DrawingApp extends JFrame {
         registerDefaultFills();
 
         canvas = new DrawingCanvas(800, 600, undoManager);
-        toolBar = new ToolBar(canvas, fillRegistry);
+        GradientToolbar gradientToolbar = new GradientToolbar();
+        toolBar = new ToolBar(canvas, fillRegistry, gradientToolbar);
         colorPicker = new ColorPicker(canvas);
         statusBar = new StatusBar();
         layerPanel = new LayerPanel(canvas.getLayerManager(), canvas::repaint);
@@ -60,6 +62,9 @@ public class DrawingApp extends JFrame {
         DockablePanel toolSettingsDock = toolSettingsDockPanel;
         DockablePanel colorDock = new DockablePanel(
             "Colors", colorPicker, dockManager);
+        DockablePanel gradientDock = new DockablePanel(
+            "Gradient Editor", gradientToolbar, dockManager);
+        gradientDock.setDockEdge(DockManager.DockEdge.SOUTH);
         DockablePanel layerDock = new DockablePanel(
             "Layers", layerPanel, dockManager);
         layerDock.setDockEdge(DockManager.DockEdge.EAST);
@@ -79,11 +84,12 @@ public class DrawingApp extends JFrame {
         westContainer.add(toolSettingsDock);
         westContainer.add(colorDock);
         eastContainer.add(layerDock);
+        southDockContainer.add(gradientDock);
 
         JScrollPane scrollPane = new JScrollPane(canvas);
         scrollPane.getViewport().setBackground(Color.GRAY);
 
-        setJMenuBar(createMenuBar(toolSettingsDock, colorDock, layerDock));
+        setJMenuBar(createMenuBar(toolSettingsDock, colorDock, layerDock, gradientDock));
 
         dockManager.setLayoutCallback(() -> {
             // Left panel stays visible for tool buttons even if west dock is empty
@@ -307,6 +313,7 @@ public class DrawingApp extends JFrame {
 
         if (gradientDir != null) {
             com.seanick80.drawingapp.gradient.GradientEditorDialog.setDefaultDirectory(gradientDir);
+            GradientToolbar.setDefaultDirectory(gradientDir);
         }
         if (locationDir != null) {
             FractalTool.setDefaultLocationDirectory(locationDir);

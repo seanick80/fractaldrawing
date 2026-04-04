@@ -70,6 +70,9 @@ Enhanced line/stroke settings for all shape and line tools:
 ### ~~Floating/detachable tool panels~~ DONE (2026-04-04)
 Drag-to-undock on any panel's title bar detaches it into an undecorated floating JDialog. During drag, a visual insertion preview (edge highlight when empty, blue insertion line between panels) shows the target dock position. Release near any frame edge docks the panel there at the indicated insertion index. Panels can be docked to WEST, EAST, NORTH, or SOUTH edges. A Toolbars menu lists all panels for quick show/hide. Floating dialogs are undecorated — the panel's own title bar provides drag-to-move and a close button that re-docks.
 
+### ~~Shared dockable gradient editor~~ DONE (2026-04-04)
+Gradient editor is now a dockable toolbar panel (GradientToolbar) instead of a modal dialog. One shared gradient is used across all tools — fractal coloring, custom gradient fill, and rectangle/oval fill all reference the same gradient object. Edits in the gradient editor propagate live: fractal re-renders immediately, fill previews update in real-time. Color picker clicks update the shared gradient in-place via `copyFrom()`. Gradient preview and "Edit Gradient..." buttons removed from individual tool settings since the toolbar is always available. Layer thumbnails now refresh after drawing operations and fractal renders.
+
 ### File save dialog with format filters
 Save dialog should show named file type filters (PNG, JPEG, BMP, FDP) instead of "All Files". Selecting FDP saves layers + up to 10 undo states; selecting an image format flattens all layers on save.
 

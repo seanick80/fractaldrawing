@@ -19,6 +19,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
     private Tool activeTool;
     private final ButtonGroup toolGroup = new ButtonGroup();
     private final FillRegistry fillRegistry;
+    private final GradientToolbar gradientToolbar;
     private java.util.function.BiConsumer<Tool, Tool> toolChangeListener;
 
     // Reusable settings components
@@ -29,12 +30,15 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
     private final JComboBox<String> fillCombo;
     private final JPanel fillOptionsPanel;
 
+    private JPanel fillGradientPreview;
+
     // Container that swaps content per tool
     private final JPanel toolSettingsContainer;
 
-    public ToolBar(DrawingCanvas canvas, FillRegistry fillRegistry) {
+    public ToolBar(DrawingCanvas canvas, FillRegistry fillRegistry, GradientToolbar gradientToolbar) {
         this.canvas = canvas;
         this.fillRegistry = fillRegistry;
+        this.gradientToolbar = gradientToolbar;
 
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
@@ -57,13 +61,21 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         fillCombo = buildFillCombo();
         fillOptionsPanel = buildFillOptionsPanel();
 
+        // Share the gradient toolbar's gradient with CustomGradientFill
+        FillProvider cgfProvider = fillRegistry.getByName("Custom Gradient");
+        if (cgfProvider instanceof CustomGradientFill cgf) {
+            cgf.setGradient(gradientToolbar.getGradient());
+        }
+
         addTool(buttonPanel, new PencilTool(), true);
         addTool(buttonPanel, new LineTool(), false);
         addTool(buttonPanel, new RectangleTool(), false);
         addTool(buttonPanel, new OvalTool(), false);
         addTool(buttonPanel, new EraserTool(), false);
         addTool(buttonPanel, new FillTool(), false);
-        addTool(buttonPanel, new FractalTool(), false);
+        FractalTool fractalTool = new FractalTool();
+        fractalTool.setGradientToolbar(gradientToolbar);
+        addTool(buttonPanel, fractalTool, false);
 
         add(buttonPanel);
 
@@ -167,7 +179,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         panel.add(filledCheck);
         panel.add(fillCombo);
 
-        JPanel gradientPreview = new JPanel() {
+        fillGradientPreview = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
@@ -183,11 +195,11 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
                 }
             }
         };
-        gradientPreview.setPreferredSize(new Dimension(120, 20));
-        gradientPreview.setMinimumSize(new Dimension(120, 20));
-        gradientPreview.setMaximumSize(new Dimension(120, 20));
-        gradientPreview.setAlignmentX(LEFT_ALIGNMENT);
-        gradientPreview.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+        fillGradientPreview.setPreferredSize(new Dimension(120, 20));
+        fillGradientPreview.setMinimumSize(new Dimension(120, 20));
+        fillGradientPreview.setMaximumSize(new Dimension(120, 20));
+        fillGradientPreview.setAlignmentX(LEFT_ALIGNMENT);
+        fillGradientPreview.setBorder(BorderFactory.createLineBorder(Color.GRAY));
 
         JButton editGradientBtn = new JButton("Edit Gradient...");
         editGradientBtn.setAlignmentX(LEFT_ALIGNMENT);
@@ -196,12 +208,8 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         editGradientBtn.addActionListener(e -> {
             FillProvider fp = fillRegistry.getByName((String) fillCombo.getSelectedItem());
             if (fp instanceof CustomGradientFill cgf) {
-                ColorGradient result = GradientEditorDialog.showDialog(
-                    SwingUtilities.getWindowAncestor(this), cgf.getGradient());
-                if (result != null) {
-                    cgf.setGradient(result);
-                    gradientPreview.repaint();
-                }
+                gradientToolbar.setGradient(cgf.getGradient());
+                gradientToolbar.setChangeCallback(fillGradientPreview::repaint);
             }
         });
 
@@ -282,7 +290,8 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         angleDial.setAlignmentX(LEFT_ALIGNMENT);
 
         // Show/hide controls based on fill selection
-        gradientPreview.setVisible(false);
+        boolean hasGradToolbar = gradientToolbar != null;
+        fillGradientPreview.setVisible(false);
         editGradientBtn.setVisible(false);
         angleLabel.setVisible(false);
         angleDial.setVisible(false);
@@ -291,8 +300,9 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
             FillProvider fp = fillRegistry.getByName(name);
             boolean isCustom = fp instanceof CustomGradientFill;
             boolean hasAngle = fp instanceof AngledFillProvider;
-            gradientPreview.setVisible(isCustom);
-            editGradientBtn.setVisible(isCustom);
+            // Hide gradient preview/button when gradient toolbar is available
+            fillGradientPreview.setVisible(isCustom && !hasGradToolbar);
+            editGradientBtn.setVisible(isCustom && !hasGradToolbar);
             angleLabel.setVisible(hasAngle);
             angleDial.setVisible(hasAngle);
             // Sync dial to the fill's current angle
@@ -300,10 +310,14 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
                 dialAngle[0] = afp.getAngleDegrees();
                 angleDial.repaint();
             }
+            // Auto-sync gradient toolbar when custom gradient is selected
+            if (isCustom) {
+                syncGradientToolbar();
+            }
         });
 
         panel.add(Box.createVerticalStrut(4));
-        panel.add(gradientPreview);
+        panel.add(fillGradientPreview);
         panel.add(Box.createVerticalStrut(2));
         panel.add(editGradientBtn);
         panel.add(Box.createVerticalStrut(4));
@@ -337,6 +351,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
             refreshSettingsPanel();
             applyStrokeSize();
             applyFillSettings();
+            syncGradientToolbar();
             tool.onActivated(canvas.getActiveLayerImage(), canvas);
             if (toolChangeListener != null) {
                 toolChangeListener.accept(oldTool, tool);
@@ -373,6 +388,16 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
 
     public Tool getTool(String name) {
         return tools.get(name);
+    }
+
+    /** Set the gradient toolbar's change callback based on the active tool. */
+    private void syncGradientToolbar() {
+        if (gradientToolbar == null) return;
+        if (activeTool instanceof FractalTool ft) {
+            gradientToolbar.setChangeCallback(ft::onGradientChanged);
+        } else {
+            gradientToolbar.setChangeCallback(fillGradientPreview::repaint);
+        }
     }
 
     private void applyStrokeSize() {

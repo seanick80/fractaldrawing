@@ -22,11 +22,12 @@ public class GradientEditorPanel extends JPanel {
     private static final int POINT_RADIUS = 5;
     private static final int HIT_RADIUS = 8;
 
-    private final ColorGradient gradient;
+    private ColorGradient gradient;
     private ColorGradient.Stop selectedStop;
     private int dragChannel = -1; // 0=R, 1=G, 2=B, -1=none
     private boolean dragging;
     private final Color[] channelColors = { new Color(220, 60, 60), new Color(60, 180, 60), new Color(60, 80, 220) };
+    private Runnable editCallback;
 
     public GradientEditorPanel(ColorGradient gradient) {
         this.gradient = gradient;
@@ -47,6 +48,7 @@ public class GradientEditorPanel extends JPanel {
                     if (c != null) {
                         selectedStop.setColor(c);
                         repaint();
+                        fireEditCallback();
                     }
                 }
             }
@@ -56,6 +58,21 @@ public class GradientEditorPanel extends JPanel {
     }
 
     public ColorGradient getGradient() { return gradient; }
+
+    /** Set a callback that fires on every edit (drag, add, delete, color change). */
+    public void setEditCallback(Runnable callback) { this.editCallback = callback; }
+
+    private void fireEditCallback() {
+        if (editCallback != null) editCallback.run();
+    }
+
+    /** Switch which gradient this panel is editing. */
+    public void setGradient(ColorGradient gradient) {
+        this.gradient = gradient;
+        this.selectedStop = null;
+        repaint();
+    }
+
     public ColorGradient.Stop getSelectedStop() { return selectedStop; }
 
     /** Set the selected stop externally (e.g. from a color chooser button). */
@@ -175,6 +192,7 @@ public class GradientEditorPanel extends JPanel {
                     gradient.removeStop(hit);
                     if (selectedStop == hit) selectedStop = null;
                     repaint();
+                    fireEditCallback();
                 }
                 return;
             }
@@ -185,6 +203,7 @@ public class GradientEditorPanel extends JPanel {
                 float pos = xToPosition(e.getX());
                 Color interpolated = gradient.getColorAt(pos);
                 selectedStop = gradient.addStop(pos, interpolated);
+                fireEditCallback();
             } else {
                 selectedStop = null;
             }
@@ -201,6 +220,7 @@ public class GradientEditorPanel extends JPanel {
                 gradient.removeStop(hit);
                 if (selectedStop == hit) selectedStop = null;
                 repaint();
+                fireEditCallback();
             }
             return;
         }
@@ -220,6 +240,7 @@ public class GradientEditorPanel extends JPanel {
             selectedStop = gradient.addStop(pos, interpolated);
             dragChannel = ch;
             dragging = true;
+            fireEditCallback();
         } else {
             selectedStop = null;
         }
@@ -236,6 +257,7 @@ public class GradientEditorPanel extends JPanel {
         selectedStop.setColor(setChannel(selectedStop.getColor(), dragChannel, val));
 
         repaint();
+        fireEditCallback();
     }
 
     // --- Painting ---

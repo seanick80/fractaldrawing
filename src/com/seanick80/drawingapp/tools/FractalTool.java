@@ -8,6 +8,7 @@ import com.seanick80.drawingapp.fractal.FractalTypeRegistry;
 import com.seanick80.drawingapp.fractal.TerrainViewer;
 import com.seanick80.drawingapp.gradient.ColorGradient;
 import com.seanick80.drawingapp.gradient.GradientEditorDialog;
+import com.seanick80.drawingapp.gradient.GradientToolbar;
 
 import javax.swing.*;
 import java.awt.*;
@@ -41,6 +42,7 @@ public class FractalTool implements Tool {
     private DrawingCanvas lastCanvas;
     private boolean active;
 
+    private GradientToolbar gradientToolbar;
     private JPanel gradientPreview;
     private PropertyChangeListener colorListener;
     private ColorPicker registeredColorPicker;
@@ -62,8 +64,25 @@ public class FractalTool implements Tool {
         return FractalLocationManager.getDefaultLocationDirectory();
     }
 
+    public void setGradientToolbar(GradientToolbar toolbar) {
+        this.gradientToolbar = toolbar;
+        // Use the toolbar's gradient as the shared gradient
+        if (toolbar != null) {
+            gradient = toolbar.getGradient();
+        }
+    }
+
     public FractalRenderer getRenderer() { return renderer; }
-    public ColorGradient getGradient() { return gradient; }
+    public ColorGradient getGradient() {
+        if (gradientToolbar != null) return gradientToolbar.getGradient();
+        return gradient;
+    }
+
+    /** Called when the gradient is modified externally (e.g. from the gradient toolbar). */
+    public void onGradientChanged() {
+        if (gradientPreview != null) gradientPreview.repaint();
+        triggerRender();
+    }
 
     @Override
     public String getName() { return "Fractal"; }
@@ -117,12 +136,7 @@ public class FractalTool implements Tool {
         panel.add(iterSpinner);
         panel.add(Box.createVerticalStrut(8));
 
-        // Gradient preview
-        JLabel gradLabel = new JLabel("Gradient:");
-        gradLabel.setFont(gradLabel.getFont().deriveFont(Font.BOLD, 11f));
-        gradLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(gradLabel);
-
+        // Gradient preview and edit button (only shown if gradient toolbar is not available)
         gradientPreview = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
@@ -135,25 +149,32 @@ public class FractalTool implements Tool {
                 }
             }
         };
-        gradientPreview.setPreferredSize(new Dimension(120, 20));
-        gradientPreview.setMaximumSize(new Dimension(120, 20));
-        gradientPreview.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(gradientPreview);
-        panel.add(Box.createVerticalStrut(4));
+        if (gradientToolbar == null) {
+            JLabel gradLabel = new JLabel("Gradient:");
+            gradLabel.setFont(gradLabel.getFont().deriveFont(Font.BOLD, 11f));
+            gradLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            panel.add(gradLabel);
 
-        JButton editGradBtn = new JButton("Edit Gradient...");
-        editGradBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
-        editGradBtn.setMaximumSize(new Dimension(120, 28));
-        editGradBtn.setFont(editGradBtn.getFont().deriveFont(10f));
-        editGradBtn.addActionListener(e -> {
-            ColorGradient result = GradientEditorDialog.showDialog(
-                SwingUtilities.getWindowAncestor(panel), gradient);
-            if (result != null) {
-                gradient = result;
-                gradientPreview.repaint();
-            }
-        });
-        panel.add(editGradBtn);
+            gradientPreview.setPreferredSize(new Dimension(120, 20));
+            gradientPreview.setMaximumSize(new Dimension(120, 20));
+            gradientPreview.setAlignmentX(Component.LEFT_ALIGNMENT);
+            panel.add(gradientPreview);
+            panel.add(Box.createVerticalStrut(4));
+
+            JButton editGradBtn = new JButton("Edit Gradient...");
+            editGradBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+            editGradBtn.setMaximumSize(new Dimension(120, 28));
+            editGradBtn.setFont(editGradBtn.getFont().deriveFont(10f));
+            editGradBtn.addActionListener(e -> {
+                ColorGradient result = GradientEditorDialog.showDialog(
+                    SwingUtilities.getWindowAncestor(panel), gradient);
+                if (result != null) {
+                    gradient = result;
+                    gradientPreview.repaint();
+                }
+            });
+            panel.add(editGradBtn);
+        }
         panel.add(Box.createVerticalStrut(12));
 
         // Save / Load location
@@ -265,8 +286,10 @@ public class FractalTool implements Tool {
             if (!active) return;
             if (!ColorPicker.PROP_FOREGROUND_COLOR.equals(evt.getPropertyName())) return;
             Color newColor = (Color) evt.getNewValue();
-            gradient = ColorGradient.fromBaseColor(newColor);
+            ColorGradient newGrad = ColorGradient.fromBaseColor(newColor);
+            getGradient().copyFrom(newGrad);
             if (gradientPreview != null) gradientPreview.repaint();
+            if (gradientToolbar != null) gradientToolbar.repaint();
             triggerRender();
         };
         picker.addColorPropertyChangeListener(colorListener);
@@ -317,6 +340,7 @@ public class FractalTool implements Tool {
                         g.drawImage(fractalImage, 0, 0, null);
                         g.dispose();
                         canvas.repaint();
+                        canvas.getLayerManager().fireChange();
                     }
                     infoPanel.updateInfoLabels(renderer);
                     JLabel pl = infoPanel.getProgressLabel();
