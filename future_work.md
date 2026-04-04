@@ -67,8 +67,8 @@ Enhanced line/stroke settings for all shape and line tools:
 
 ## UI fit and finish (backlog)
 
-### Floating/detachable tool panels
-All sidebar panels (drawing toolbar, tool settings, color picker, layer panel) should be dockable/undockable. Users can detach any panel into its own floating window, move it, resize it, and re-dock it. Panels should remember their detached/docked state. Consider using JInternalFrame or a lightweight docking framework. Priority: floating the tool settings and layer panels first, since they compete for sidebar space.
+### ~~Floating/detachable tool panels~~ DONE (2026-04-04)
+Drag-to-undock on any panel's title bar detaches it into an undecorated floating JDialog. During drag, a visual insertion preview (edge highlight when empty, blue insertion line between panels) shows the target dock position. Release near any frame edge docks the panel there at the indicated insertion index. Panels can be docked to WEST, EAST, NORTH, or SOUTH edges. A Toolbars menu lists all panels for quick show/hide. Floating dialogs are undecorated — the panel's own title bar provides drag-to-move and a close button that re-docks.
 
 ### File save dialog with format filters
 Save dialog should show named file type filters (PNG, JPEG, BMP, FDP) instead of "All Files". Selecting FDP saves layers + up to 10 undo states; selecting an image format flattens all layers on save.

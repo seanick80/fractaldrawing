@@ -25,6 +25,7 @@ public class DrawingApp extends JFrame {
     private final UndoManager undoManager;
     private final LayerPanel layerPanel;
     private final DockManager dockManager;
+    private DockablePanel toolSettingsDockPanel;
     private JMenu activeToolMenu;
 
     public DrawingApp() {
@@ -48,43 +49,59 @@ public class DrawingApp extends JFrame {
 
         dockManager = new DockManager(this);
 
+        // Add padding to tool settings container
+        JPanel toolSettingsWrapper = new JPanel(new BorderLayout());
+        toolSettingsWrapper.setBorder(BorderFactory.createEmptyBorder(0, 8, 0, 8));
+        toolSettingsWrapper.add(toolBar.getToolSettingsContainer(), BorderLayout.CENTER);
+
         // Wrap tool settings, color picker, and layers in dockable panels
-        DockablePanel toolSettingsDock = new DockablePanel(
-            "Tool Settings", toolBar.getToolSettingsContainer(), dockManager);
+        toolSettingsDockPanel = new DockablePanel(
+            "Tool Settings", toolSettingsWrapper, dockManager);
+        DockablePanel toolSettingsDock = toolSettingsDockPanel;
         DockablePanel colorDock = new DockablePanel(
             "Colors", colorPicker, dockManager);
         DockablePanel layerDock = new DockablePanel(
             "Layers", layerPanel, dockManager);
+        layerDock.setDockEdge(DockManager.DockEdge.EAST);
 
-        // Left side panel: tool buttons + dockable settings + dockable colors
-        JPanel leftPanel = new JPanel();
-        leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
-        leftPanel.add(toolBar);
-        leftPanel.add(toolSettingsDock);
-        leftPanel.add(colorDock);
+        // Place panels in their default edge containers
+        JPanel westContainer = dockManager.getWestContainer();
+        JPanel eastContainer = dockManager.getEastContainer();
+        JPanel northContainer = dockManager.getNorthContainer();
+        JPanel southDockContainer = dockManager.getSouthContainer();
 
-        // Right side panel: dockable layers
-        JPanel rightPanel = new JPanel(new BorderLayout());
-        rightPanel.add(layerDock, BorderLayout.NORTH);
-        rightPanel.setPreferredSize(new Dimension(170, 0));
+        // Tool buttons always visible at top of west side
+        JPanel leftPanel = new JPanel(new BorderLayout());
+        leftPanel.add(toolBar, BorderLayout.NORTH);
+        leftPanel.add(westContainer, BorderLayout.CENTER);
+
+        // Initial placement
+        westContainer.add(toolSettingsDock);
+        westContainer.add(colorDock);
+        eastContainer.add(layerDock);
 
         JScrollPane scrollPane = new JScrollPane(canvas);
         scrollPane.getViewport().setBackground(Color.GRAY);
 
         setJMenuBar(createMenuBar(toolSettingsDock, colorDock, layerDock));
 
-        // Layout callback: collapse side panels + sync View menu checkboxes
         dockManager.setLayoutCallback(() -> {
-            leftPanel.setVisible(toolSettingsDock.isDocked() || colorDock.isDocked());
-            rightPanel.setVisible(layerDock.isDocked());
-            syncViewMenuCheckboxes();
+            // Left panel stays visible for tool buttons even if west dock is empty
+            leftPanel.setVisible(true);
+            syncToolbarsMenuCheckboxes();
         });
 
         setLayout(new BorderLayout());
         add(leftPanel, BorderLayout.WEST);
         add(scrollPane, BorderLayout.CENTER);
-        add(rightPanel, BorderLayout.EAST);
-        add(statusBar, BorderLayout.SOUTH);
+        add(eastContainer, BorderLayout.EAST);
+        add(northContainer, BorderLayout.NORTH);
+
+        // South: status bar + any south-docked panels
+        JPanel southPanel = new JPanel(new BorderLayout());
+        southPanel.add(southDockContainer, BorderLayout.NORTH);
+        southPanel.add(statusBar, BorderLayout.SOUTH);
+        add(southPanel, BorderLayout.SOUTH);
 
         pack();
         setSize(1200, 768);
@@ -154,35 +171,41 @@ public class DrawingApp extends JFrame {
         editMenu.addSeparator();
         editMenu.add(clearItem);
 
-        JMenu viewMenu = new JMenu("View");
-        viewMenu.setMnemonic('V');
+        JMenu toolbarsMenu = new JMenu("Toolbars");
+        toolbarsMenu.setMnemonic('T');
         for (DockablePanel dp : dockablePanels) {
-            JCheckBoxMenuItem item = new JCheckBoxMenuItem(dp.getTitle(), dp.isDocked());
-            item.addActionListener(e -> dockManager.toggle(dp));
-            viewMenu.add(item);
+            JCheckBoxMenuItem item = new JCheckBoxMenuItem(dp.getTitle(), true);
+            item.addActionListener(e -> {
+                if (item.isSelected()) {
+                    dockManager.show(dp);
+                } else {
+                    dockManager.hide(dp);
+                }
+            });
+            toolbarsMenu.add(item);
         }
-        viewMenu.addSeparator();
-        JMenuItem dockAllItem = new JMenuItem("Dock All Panels");
+        toolbarsMenu.addSeparator();
+        JMenuItem dockAllItem = new JMenuItem("Dock All");
         dockAllItem.addActionListener(e -> dockManager.dockAll());
-        viewMenu.add(dockAllItem);
+        toolbarsMenu.add(dockAllItem);
 
         menuBar.add(fileMenu);
         menuBar.add(editMenu);
-        menuBar.add(viewMenu);
+        menuBar.add(toolbarsMenu);
         return menuBar;
     }
 
-    private void syncViewMenuCheckboxes() {
+    private void syncToolbarsMenuCheckboxes() {
         JMenuBar menuBar = getJMenuBar();
         for (int i = 0; i < menuBar.getMenuCount(); i++) {
             JMenu menu = menuBar.getMenu(i);
-            if (menu != null && "View".equals(menu.getText())) {
+            if (menu != null && "Toolbars".equals(menu.getText())) {
                 List<DockablePanel> panels = dockManager.getPanels();
                 int panelIdx = 0;
                 for (int j = 0; j < menu.getItemCount() && panelIdx < panels.size(); j++) {
                     JMenuItem item = menu.getItem(j);
                     if (item instanceof JCheckBoxMenuItem cb) {
-                        cb.setSelected(panels.get(panelIdx).isDocked());
+                        cb.setSelected(!panels.get(panelIdx).isHidden());
                         panelIdx++;
                     }
                 }
@@ -204,6 +227,10 @@ public class DrawingApp extends JFrame {
         }
         menuBar.revalidate();
         menuBar.repaint();
+        // Resize floating tool settings dialog if content changed
+        if (toolSettingsDockPanel != null) {
+            toolSettingsDockPanel.repackIfFloating();
+        }
     }
 
     private void newImage() {

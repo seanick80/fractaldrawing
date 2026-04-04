@@ -2442,15 +2442,17 @@ public class FractalRenderTest {
 
         javax.swing.JPanel content1 = new javax.swing.JPanel();
         javax.swing.JPanel content2 = new javax.swing.JPanel();
+        javax.swing.JPanel content3 = new javax.swing.JPanel();
 
         DockablePanel dp1 = new DockablePanel("Panel A", content1, manager);
         DockablePanel dp2 = new DockablePanel("Panel B", content2, manager);
+        DockablePanel dp3 = new DockablePanel("Panel C", content3, manager);
 
         // Initial state
         check("dock panel starts docked", dp1.isDocked());
         check("dock panel title", "Panel A".equals(dp1.getTitle()));
         check("dock panel content accessible", dp1.getContentPanel() == content1);
-        check("manager has 2 panels", manager.getPanels().size() == 2);
+        check("manager has 3 panels", manager.getPanels().size() == 3);
         check("manager panels in order", manager.getPanels().get(0) == dp1);
         check("manager panels second", manager.getPanels().get(1) == dp2);
 
@@ -2477,6 +2479,116 @@ public class FractalRenderTest {
         callbackCount[0] = 0;
         manager.dockAll();
         check("dockAll fires callback", callbackCount[0] == 1);
+
+        // --- DockEdge tracking ---
+        check("default dock edge is WEST", dp1.getDockEdge() == DockManager.DockEdge.WEST);
+
+        dp1.setDockEdge(DockManager.DockEdge.EAST);
+        check("setDockEdge to EAST", dp1.getDockEdge() == DockManager.DockEdge.EAST);
+
+        dp1.setDockEdge(DockManager.DockEdge.NORTH);
+        check("setDockEdge to NORTH", dp1.getDockEdge() == DockManager.DockEdge.NORTH);
+
+        dp1.setDockEdge(DockManager.DockEdge.SOUTH);
+        check("setDockEdge to SOUTH", dp1.getDockEdge() == DockManager.DockEdge.SOUTH);
+
+        // Reset to WEST for remaining tests
+        dp1.setDockEdge(DockManager.DockEdge.WEST);
+        check("setDockEdge back to WEST", dp1.getDockEdge() == DockManager.DockEdge.WEST);
+
+        // --- DockTarget (edge + index) ---
+        DockManager.DockTarget target = new DockManager.DockTarget(DockManager.DockEdge.EAST, 2);
+        check("DockTarget edge field", target.edge == DockManager.DockEdge.EAST);
+        check("DockTarget index field", target.index == 2);
+
+        DockManager.DockTarget targetWest = new DockManager.DockTarget(DockManager.DockEdge.WEST, 0);
+        check("DockTarget west edge", targetWest.edge == DockManager.DockEdge.WEST);
+        check("DockTarget zero index", targetWest.index == 0);
+
+        // --- hide/show (isHidden/setHidden) ---
+        check("panel not hidden initially", !dp2.isHidden());
+
+        dp2.setHidden(true);
+        check("setHidden true", dp2.isHidden());
+        // Docked panel should be set invisible when hidden
+        check("hidden docked panel not visible", !dp2.isVisible());
+
+        dp2.setHidden(false);
+        check("setHidden false", !dp2.isHidden());
+        // After un-hiding, panel should be visible again
+        check("un-hidden docked panel is visible", dp2.isVisible());
+
+        // hide() via manager
+        callbackCount[0] = 0;
+        manager.hide(dp3);
+        check("manager hide sets hidden", dp3.isHidden());
+        check("manager hide fires callback", callbackCount[0] >= 1);
+
+        // show() via manager
+        callbackCount[0] = 0;
+        manager.show(dp3);
+        check("manager show clears hidden", !dp3.isHidden());
+        check("manager show fires callback", callbackCount[0] >= 1);
+
+        // dockAll clears hidden state
+        dp2.setHidden(true);
+        dp3.setHidden(true);
+        manager.dockAll();
+        check("dockAll unhides dp2", !dp2.isHidden());
+        check("dockAll unhides dp3", !dp3.isHidden());
+
+        // --- Edge containers ---
+        check("getWestContainer not null", manager.getWestContainer() != null);
+        check("getEastContainer not null", manager.getEastContainer() != null);
+        check("getNorthContainer not null", manager.getNorthContainer() != null);
+        check("getSouthContainer not null", manager.getSouthContainer() != null);
+
+        // Containers are distinct objects
+        check("west and east containers distinct",
+              manager.getWestContainer() != manager.getEastContainer());
+        check("north and south containers distinct",
+              manager.getNorthContainer() != manager.getSouthContainer());
+        check("west and north containers distinct",
+              manager.getWestContainer() != manager.getNorthContainer());
+
+        // --- addToEdgeContainer via dockToEdge with index placement ---
+        // dock dp1 to EAST container at index 0
+        callbackCount[0] = 0;
+        manager.dockToEdge(dp1, DockManager.DockEdge.EAST, 0);
+        check("dockToEdge sets edge on panel", dp1.getDockEdge() == DockManager.DockEdge.EAST);
+        check("dockToEdge panel is docked", dp1.isDocked());
+        check("dockToEdge fires callback", callbackCount[0] >= 1);
+        // Panel should be in east container
+        boolean inEast = false;
+        for (java.awt.Component c : manager.getEastContainer().getComponents()) {
+            if (c == dp1) inEast = true;
+        }
+        check("panel placed in east container", inEast);
+        // Panel should not be in west container
+        boolean inWest = false;
+        for (java.awt.Component c : manager.getWestContainer().getComponents()) {
+            if (c == dp1) inWest = true;
+        }
+        check("panel removed from west container", !inWest);
+
+        // dock dp2 to EAST container at index 0, dp1 should shift to index 1
+        manager.dockToEdge(dp2, DockManager.DockEdge.EAST, 0);
+        check("dp2 at index 0 in east container",
+              manager.getEastContainer().getComponent(0) == dp2);
+        check("dp1 shifted to index 1 in east container",
+              manager.getEastContainer().getComponent(1) == dp1);
+
+        // dock dp3 to WEST container
+        manager.dockToEdge(dp3, DockManager.DockEdge.WEST, 0);
+        check("dp3 in west container",
+              manager.getWestContainer().getComponent(0) == dp3);
+
+        // dock dp1 back to WEST via dockAll (resets all)
+        manager.dockAll();
+        // After dockAll, each panel should be docked and not hidden
+        check("dockAll: dp1 docked", dp1.isDocked());
+        check("dockAll: dp2 docked", dp2.isDocked());
+        check("dockAll: dp3 docked", dp3.isDocked());
 
         frame.dispose();
     }

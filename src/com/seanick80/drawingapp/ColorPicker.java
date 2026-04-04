@@ -82,6 +82,10 @@ public class ColorPicker extends JPanel {
         add(label, BorderLayout.NORTH);
         add(activePanel, BorderLayout.WEST);
         add(palettePanel, BorderLayout.CENTER);
+
+        // Constrain size so it doesn't stretch when inside a dockable panel
+        Dimension pref = getPreferredSize();
+        setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
     }
 
     private JPanel createSwatch(Color color) {
