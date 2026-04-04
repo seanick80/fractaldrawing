@@ -75,6 +75,13 @@ public class FractalMenuBuilder {
 
         menu.addSeparator();
 
+        JMenuItem screensaverItem = new JMenuItem("Screensaver Mode");
+        screensaverItem.setAccelerator(KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_F11, 0));
+        screensaverItem.addActionListener(e ->
+                showScreensaverDialog());
+        menu.add(screensaverItem);
+
         JMenu animMenu = new JMenu("Animations");
         JMenuItem paletteCycleItem = new JMenuItem("Palette Cycle...");
         paletteCycleItem.addActionListener(e ->
@@ -329,6 +336,36 @@ public class FractalMenuBuilder {
                 }
             }
         }.execute();
+    }
+
+    private static void showScreensaverDialog() {
+        JTextField durationField = new JTextField("15", 5);
+        JComboBox<String> colorModeCombo = new JComboBox<>(new String[]{"Mod (cyclic)", "Division (linear)"});
+
+        JPanel settingsPanel = new JPanel(new GridLayout(2, 2, 4, 4));
+        settingsPanel.add(new JLabel("Display duration (seconds):"));
+        settingsPanel.add(durationField);
+        settingsPanel.add(new JLabel("Coloring mode:"));
+        settingsPanel.add(colorModeCombo);
+
+        int result = JOptionPane.showConfirmDialog(null, settingsPanel,
+                "Screensaver Mode", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) return;
+
+        int duration;
+        try {
+            duration = Integer.parseInt(durationField.getText().trim());
+            if (duration < 1) duration = 1;
+            if (duration > 300) duration = 300;
+        } catch (NumberFormatException ex) {
+            duration = 15;
+        }
+
+        FractalRenderer.ColorMode colorMode = colorModeCombo.getSelectedIndex() == 0
+                ? FractalRenderer.ColorMode.MOD : FractalRenderer.ColorMode.DIVISION;
+
+        ScreensaverController controller = new ScreensaverController(duration, colorMode);
+        controller.start();
     }
 
     static String formatTypeName(String registryName) {

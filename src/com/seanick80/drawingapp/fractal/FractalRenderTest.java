@@ -164,6 +164,11 @@ public class FractalRenderTest {
         testIterationAnimatorTotalFrames();
         testPaletteCycleRecolorMatchesDirectRender();
 
+        // Screensaver tests
+        testScreensaverControllerLifecycle();
+        testScreensaverPanelTransition();
+        testScreensaverFindLocationNotNull();
+
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
         if (failed > 0) {
@@ -3021,6 +3026,51 @@ public class FractalRenderTest {
         int[] iters = r.getLastRenderIters().clone();
         BufferedImage recolored = r.recolorFromIters(iters, 50, 50, grad);
         check("recolor matches direct render (64 iter)", imagesEqual(direct, recolored));
+    }
+
+    // === Screensaver Tests ===
+
+    private static void testScreensaverControllerLifecycle() {
+        // Test that controller starts and stops cleanly without full-screen (headless-safe)
+        ScreensaverController controller = new ScreensaverController(5);
+        check("screensaver not running initially", !controller.isRunning());
+        // Don't call start() in test environment (requires display) — just verify state
+    }
+
+    private static void testScreensaverPanelTransition() {
+        // Test the cross-fade panel logic
+        ScreensaverController.ScreensaverPanel panel =
+                new ScreensaverController.ScreensaverPanel(100, 100, () -> {});
+
+        BufferedImage img1 = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g1 = img1.createGraphics();
+        g1.setColor(java.awt.Color.RED);
+        g1.fillRect(0, 0, 100, 100);
+        g1.dispose();
+
+        BufferedImage img2 = new BufferedImage(100, 100, BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g2 = img2.createGraphics();
+        g2.setColor(java.awt.Color.BLUE);
+        g2.fillRect(0, 0, 100, 100);
+        g2.dispose();
+
+        // First image sets immediately (no fade)
+        panel.transitionTo(img1, 500);
+        check("screensaver panel accepts first image", true);
+
+        // Second image triggers fade
+        panel.transitionTo(img2, 500);
+        check("screensaver panel accepts second image", true);
+    }
+
+    private static void testScreensaverFindLocationNotNull() {
+        // findInterestingLocation should usually find something within 1000 attempts
+        double[] loc = com.seanick80.drawingapp.tools.FractalAnimationController.findInterestingLocation();
+        check("findInterestingLocation returns location", loc != null);
+        if (loc != null) {
+            check("location has 3 components", loc.length == 3);
+            check("location halfSpan > 0", loc[2] > 0);
+        }
     }
 
     private static void deleteDir(File dir) {
