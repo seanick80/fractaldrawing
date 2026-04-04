@@ -83,6 +83,7 @@ public class FractalMenuBuilder {
         menu.add(screensaverItem);
 
         JMenu animMenu = new JMenu("Animations");
+
         JMenuItem paletteCycleItem = new JMenuItem("Palette Cycle...");
         paletteCycleItem.addActionListener(e ->
                 showPaletteCycleDialog(renderer, renderController, fractalTool));
@@ -92,6 +93,17 @@ public class FractalMenuBuilder {
         iterAnimItem.addActionListener(e ->
                 showIterationAnimDialog(renderer, renderController, fractalTool));
         animMenu.add(iterAnimItem);
+
+        JMenuItem zoomMovieItem = new JMenuItem("Zoom Movie...");
+        zoomMovieItem.addActionListener(e -> {
+            FractalAnimationController animController = fractalTool.getAnimationController();
+            animController.startZoomAnimation(renderer, renderController.getGradient(),
+                    renderController.getLastImage(),
+                    fractalTool.getLocationManager().getLastDirectory(),
+                    fractalTool.getInfoPanel().getProgressLabel(), null);
+        });
+        animMenu.add(zoomMovieItem);
+
         menu.add(animMenu);
 
         menu.addSeparator();
@@ -192,13 +204,21 @@ public class FractalMenuBuilder {
         JTextField fpsField = new JTextField("30", 5);
         JTextField speedField = new JTextField("1.0", 5);
 
-        JPanel settingsPanel = new JPanel(new GridLayout(3, 2, 4, 4));
+        JRadioButton previewMode = new JRadioButton("Preview (real-time)", true);
+        JRadioButton saveMode = new JRadioButton("Save to file");
+        ButtonGroup modeGroup = new ButtonGroup();
+        modeGroup.add(previewMode);
+        modeGroup.add(saveMode);
+
+        JPanel settingsPanel = new JPanel(new GridLayout(4, 2, 4, 4));
         settingsPanel.add(new JLabel("Total frames:"));
         settingsPanel.add(framesField);
         settingsPanel.add(new JLabel("FPS:"));
         settingsPanel.add(fpsField);
         settingsPanel.add(new JLabel("Cycle speed (rotations):"));
         settingsPanel.add(speedField);
+        settingsPanel.add(previewMode);
+        settingsPanel.add(saveMode);
 
         int result = JOptionPane.showConfirmDialog(null, settingsPanel,
                 "Palette Cycle Animation", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -216,12 +236,6 @@ public class FractalMenuBuilder {
             return;
         }
 
-        JFileChooser fc = new JFileChooser(FractalLocationManager.getDefaultLocationDirectory());
-        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        fc.setDialogTitle("Select output directory");
-        if (fc.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) return;
-        File outputDir = fc.getSelectedFile();
-
         int[] itersCopy = iters.clone();
         ColorGradient grad = renderController.getGradient();
         PaletteCycleAnimator animator = new PaletteCycleAnimator(renderer);
@@ -229,31 +243,36 @@ public class FractalMenuBuilder {
         animator.setFps(fpsVal);
         animator.setCycleSpeed(cycleSpeed);
 
-        new SwingWorker<Integer, String>() {
-            @Override
-            protected Integer doInBackground() throws Exception {
-                return animator.renderToFiles(outputDir, itersCopy, size[0], size[1], grad,
-                        (frame, total, ms) -> publish(String.format("Frame %d/%d (%dms)", frame + 1, total, ms)));
-            }
+        if (previewMode.isSelected()) {
+            animator.playRealtime(itersCopy, size[0], size[1], grad);
+        } else {
+            JFileChooser fc = new JFileChooser(FractalLocationManager.getDefaultLocationDirectory());
+            fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            fc.setDialogTitle("Select output directory");
+            if (fc.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) return;
+            File outputDir = fc.getSelectedFile();
 
-            @Override
-            protected void process(java.util.List<String> chunks) {
-                // Could update a progress label if available
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    int count = get();
-                    JOptionPane.showMessageDialog(null,
-                            count + " frames + palette_cycle.avi saved to:\n" + outputDir.getAbsolutePath(),
-                            "Palette Cycle Complete", JOptionPane.INFORMATION_MESSAGE);
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(null, "Error: " + ex.getMessage(),
-                            "Animation Error", JOptionPane.ERROR_MESSAGE);
+            new SwingWorker<Integer, String>() {
+                @Override
+                protected Integer doInBackground() throws Exception {
+                    return animator.renderToFiles(outputDir, itersCopy, size[0], size[1], grad,
+                            (frame, total, ms) -> publish(String.format("Frame %d/%d (%dms)", frame + 1, total, ms)));
                 }
-            }
-        }.execute();
+
+                @Override
+                protected void done() {
+                    try {
+                        int count = get();
+                        JOptionPane.showMessageDialog(null,
+                                count + " frames + palette_cycle.avi saved to:\n" + outputDir.getAbsolutePath(),
+                                "Palette Cycle Complete", JOptionPane.INFORMATION_MESSAGE);
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(null, "Error: " + ex.getMessage(),
+                                "Animation Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            }.execute();
+        }
     }
 
     private static void showIterationAnimDialog(FractalRenderer renderer,
@@ -270,7 +289,13 @@ public class FractalMenuBuilder {
         JTextField widthField = new JTextField(String.valueOf(defaultW), 5);
         JTextField heightField = new JTextField(String.valueOf(defaultH), 5);
 
-        JPanel settingsPanel = new JPanel(new GridLayout(6, 2, 4, 4));
+        JRadioButton previewMode = new JRadioButton("Preview (real-time)", true);
+        JRadioButton saveMode = new JRadioButton("Save to file");
+        ButtonGroup modeGroup = new ButtonGroup();
+        modeGroup.add(previewMode);
+        modeGroup.add(saveMode);
+
+        JPanel settingsPanel = new JPanel(new GridLayout(7, 2, 4, 4));
         settingsPanel.add(new JLabel("Start iterations:"));
         settingsPanel.add(startField);
         settingsPanel.add(new JLabel("End iterations:"));
@@ -283,6 +308,8 @@ public class FractalMenuBuilder {
         settingsPanel.add(widthField);
         settingsPanel.add(new JLabel("Frame height:"));
         settingsPanel.add(heightField);
+        settingsPanel.add(previewMode);
+        settingsPanel.add(saveMode);
 
         int result = JOptionPane.showConfirmDialog(null, settingsPanel,
                 "Iteration Animation", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
@@ -302,12 +329,6 @@ public class FractalMenuBuilder {
             return;
         }
 
-        JFileChooser fc = new JFileChooser(FractalLocationManager.getDefaultLocationDirectory());
-        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        fc.setDialogTitle("Select output directory");
-        if (fc.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) return;
-        File outputDir = fc.getSelectedFile();
-
         ColorGradient grad = renderController.getGradient();
         IterationAnimator animator = new IterationAnimator();
         animator.setStartIter(startIter);
@@ -316,26 +337,36 @@ public class FractalMenuBuilder {
         animator.setFps(fpsVal);
         animator.setSize(frameW, frameH);
 
-        new SwingWorker<Integer, String>() {
-            @Override
-            protected Integer doInBackground() throws Exception {
-                return animator.renderToFiles(outputDir, renderer, grad,
-                        (frame, total, ms) -> publish(String.format("Frame %d/%d (%dms)", frame + 1, total, ms)));
-            }
+        if (previewMode.isSelected()) {
+            animator.playRealtime(renderer, grad);
+        } else {
+            JFileChooser fc = new JFileChooser(FractalLocationManager.getDefaultLocationDirectory());
+            fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            fc.setDialogTitle("Select output directory");
+            if (fc.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) return;
+            File outputDir = fc.getSelectedFile();
 
-            @Override
-            protected void done() {
-                try {
-                    int count = get();
-                    JOptionPane.showMessageDialog(null,
-                            count + " frames + iteration_anim.avi saved to:\n" + outputDir.getAbsolutePath(),
-                            "Iteration Animation Complete", JOptionPane.INFORMATION_MESSAGE);
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(null, "Error: " + ex.getMessage(),
-                            "Animation Error", JOptionPane.ERROR_MESSAGE);
+            new SwingWorker<Integer, String>() {
+                @Override
+                protected Integer doInBackground() throws Exception {
+                    return animator.renderToFiles(outputDir, renderer, grad,
+                            (frame, total, ms) -> publish(String.format("Frame %d/%d (%dms)", frame + 1, total, ms)));
                 }
-            }
-        }.execute();
+
+                @Override
+                protected void done() {
+                    try {
+                        int count = get();
+                        JOptionPane.showMessageDialog(null,
+                                count + " frames + iteration_anim.avi saved to:\n" + outputDir.getAbsolutePath(),
+                                "Iteration Animation Complete", JOptionPane.INFORMATION_MESSAGE);
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(null, "Error: " + ex.getMessage(),
+                                "Animation Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            }.execute();
+        }
     }
 
     private static void showScreensaverDialog() {

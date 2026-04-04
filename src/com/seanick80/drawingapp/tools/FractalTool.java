@@ -46,9 +46,15 @@ public class FractalTool implements Tool {
 
     public void setGradientToolbar(GradientToolbar toolbar) {
         renderController.setGradientToolbar(toolbar);
+        if (toolbar != null) {
+            toolbar.setPaletteCycleRenderer(renderer);
+        }
     }
 
     public FractalRenderer getRenderer() { return renderer; }
+    public FractalAnimationController getAnimationController() { return animationController; }
+    public FractalLocationManager getLocationManager() { return locationManager; }
+    public FractalInfoPanel getInfoPanel() { return infoPanel; }
 
     public ColorGradient getGradient() {
         return renderController.getGradient();

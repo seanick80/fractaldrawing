@@ -1,8 +1,12 @@
 package com.seanick80.drawingapp.gradient;
 
+import com.seanick80.drawingapp.fractal.FractalRenderer;
+import com.seanick80.drawingapp.fractal.PaletteCycleAnimator;
+
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.File;
 
 /**
@@ -15,6 +19,11 @@ public class GradientToolbar extends JPanel {
     private final GradientEditorPanel editorPanel;
     private Runnable changeCallback;
     private static File lastDirectory;
+
+    // Palette cycle live preview
+    private FractalRenderer paletteCycleRenderer;
+    private volatile boolean paletteCycling;
+    private Thread paletteCycleThread;
 
     public static void setDefaultDirectory(File dir) {
         if (lastDirectory == null && dir != null && dir.isDirectory()) {
@@ -58,9 +67,21 @@ public class GradientToolbar extends JPanel {
             editorPanel.repaint();
             fireChange();
         });
+        JCheckBox cycleCheck = new JCheckBox("Cycle");
+        cycleCheck.setFont(cycleCheck.getFont().deriveFont(10f));
+        cycleCheck.setToolTipText("Live palette cycle animation on current fractal");
+        cycleCheck.addActionListener(e -> {
+            if (cycleCheck.isSelected()) {
+                startPaletteCycle();
+            } else {
+                stopPaletteCycle();
+            }
+        });
+
         buttonPanel.add(loadButton);
         buttonPanel.add(saveButton);
         buttonPanel.add(resetButton);
+        buttonPanel.add(cycleCheck);
 
         JPanel bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.add(helpLabel, BorderLayout.NORTH);
@@ -87,6 +108,59 @@ public class GradientToolbar extends JPanel {
 
     private void fireChange() {
         if (changeCallback != null) changeCallback.run();
+    }
+
+    /** Set the renderer used for live palette cycling. Call from FractalTool setup. */
+    public void setPaletteCycleRenderer(FractalRenderer renderer) {
+        this.paletteCycleRenderer = renderer;
+    }
+
+    private void startPaletteCycle() {
+        if (paletteCycleRenderer == null) return;
+        int[] iters = paletteCycleRenderer.getLastRenderIters();
+        int[] size = paletteCycleRenderer.getLastRenderSize();
+        if (iters == null || size[0] <= 0) return;
+
+        stopPaletteCycle();
+        paletteCycling = true;
+
+        int[] itersCopy = new int[iters.length];
+        System.arraycopy(iters, 0, itersCopy, 0, iters.length);
+        int w = size[0], h = size[1];
+        ColorGradient baseGrad = getGradient();
+
+        paletteCycleThread = new Thread(() -> {
+            int frame = 0;
+            int totalFrames = 120;
+            float cycleSpeed = 1.0f;
+            while (paletteCycling) {
+                float shift = (frame * cycleSpeed) / totalFrames;
+                frame = (frame + 1) % totalFrames;
+                ColorGradient shifted = PaletteCycleAnimator.shiftGradient(baseGrad, shift);
+                BufferedImage img = paletteCycleRenderer.recolorFromIters(itersCopy, w, h, shifted);
+
+                // Update the gradient editor preview to show shifted gradient
+                SwingUtilities.invokeLater(() -> editorPanel.repaint());
+
+                // Also update the canvas if a change callback is registered
+                if (changeCallback != null) {
+                    // Push the shifted gradient colors live
+                    SwingUtilities.invokeLater(changeCallback);
+                }
+
+                try { Thread.sleep(33); } catch (InterruptedException e) { break; }
+            }
+        }, "PaletteCycle");
+        paletteCycleThread.setDaemon(true);
+        paletteCycleThread.start();
+    }
+
+    private void stopPaletteCycle() {
+        paletteCycling = false;
+        if (paletteCycleThread != null) {
+            paletteCycleThread.interrupt();
+            paletteCycleThread = null;
+        }
     }
 
     private JFileChooser createChooser() {

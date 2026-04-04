@@ -7,10 +7,13 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Full-screen screensaver that cycles through random interesting
  * Mandelbrot locations with cross-fade transitions.
+ * Spans all connected displays.
  */
 public class ScreensaverController {
 
@@ -18,7 +21,7 @@ public class ScreensaverController {
     private final int transitionDurationMs;
     private final FractalRenderer.ColorMode colorMode;
     private volatile boolean running;
-    private JFrame fullScreenFrame;
+    private final List<JFrame> fullScreenFrames = new ArrayList<>();
 
     public ScreensaverController(int displayDurationSeconds) {
         this(displayDurationSeconds, FractalRenderer.ColorMode.MOD);
@@ -36,78 +39,92 @@ public class ScreensaverController {
         if (running) return;
         running = true;
 
-        GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment()
-                .getDefaultScreenDevice();
-        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        GraphicsDevice[] screens = ge.getScreenDevices();
 
-        fullScreenFrame = new JFrame();
-        fullScreenFrame.setUndecorated(true);
-        fullScreenFrame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        List<ScreenInfo> screenInfos = new ArrayList<>();
+        for (GraphicsDevice gd : screens) {
+            Rectangle bounds = gd.getDefaultConfiguration().getBounds();
 
-        ScreensaverPanel panel = new ScreensaverPanel(
-                screenSize.width, screenSize.height, this::stop);
-        fullScreenFrame.setContentPane(panel);
+            JFrame frame = new JFrame(gd.getDefaultConfiguration());
+            frame.setUndecorated(true);
+            frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
-        fullScreenFrame.setSize(screenSize);
-        if (gd.isFullScreenSupported()) {
-            gd.setFullScreenWindow(fullScreenFrame);
-        } else {
-            fullScreenFrame.setExtendedState(JFrame.MAXIMIZED_BOTH);
-            fullScreenFrame.setVisible(true);
+            ScreensaverPanel panel = new ScreensaverPanel(
+                    bounds.width, bounds.height, this::stop);
+            frame.setContentPane(panel);
+            frame.setBounds(bounds);
+
+            if (gd.isFullScreenSupported()) {
+                gd.setFullScreenWindow(frame);
+            } else {
+                frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
+                frame.setVisible(true);
+            }
+
+            // Hide cursor
+            frame.setCursor(frame.getToolkit().createCustomCursor(
+                    new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB),
+                    new Point(0, 0), "blank"));
+
+            fullScreenFrames.add(frame);
+            screenInfos.add(new ScreenInfo(gd, panel, bounds.width, bounds.height));
         }
 
-        // Hide cursor
-        fullScreenFrame.setCursor(fullScreenFrame.getToolkit().createCustomCursor(
-                new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB),
-                new Point(0, 0), "blank"));
-
         // Start render loop in background
-        new Thread(() -> renderLoop(panel, screenSize.width, screenSize.height),
-                "Screensaver-Render").start();
+        new Thread(() -> renderLoop(screenInfos), "Screensaver-Render").start();
     }
 
     public void stop() {
         running = false;
         SwingUtilities.invokeLater(() -> {
-            if (fullScreenFrame != null) {
-                GraphicsDevice gd = GraphicsEnvironment.getLocalGraphicsEnvironment()
-                        .getDefaultScreenDevice();
-                if (gd.getFullScreenWindow() == fullScreenFrame) {
+            for (JFrame frame : fullScreenFrames) {
+                GraphicsDevice gd = frame.getGraphicsConfiguration().getDevice();
+                if (gd.getFullScreenWindow() == frame) {
                     gd.setFullScreenWindow(null);
                 }
-                fullScreenFrame.dispose();
-                fullScreenFrame = null;
+                frame.dispose();
             }
+            fullScreenFrames.clear();
         });
     }
 
-    private void renderLoop(ScreensaverPanel panel, int width, int height) {
-        FractalRenderer renderer = new FractalRenderer();
-        renderer.setType(FractalType.MANDELBROT);
-        renderer.setRenderMode(FractalRenderer.RenderMode.AUTO);
-        renderer.setColorMode(colorMode);
+    private void renderLoop(List<ScreenInfo> screens) {
+        // One renderer per screen for parallel rendering
+        List<FractalRenderer> renderers = new ArrayList<>();
+        for (int i = 0; i < screens.size(); i++) {
+            FractalRenderer renderer = new FractalRenderer();
+            renderer.setType(FractalType.MANDELBROT);
+            renderer.setRenderMode(FractalRenderer.RenderMode.AUTO);
+            renderer.setColorMode(colorMode);
+            renderers.add(renderer);
+        }
 
         while (running) {
+            // Find a location and render on all screens
             double[] loc = FractalAnimationController.findInterestingLocation();
             if (loc == null) {
-                // Fallback: full Mandelbrot
                 loc = new double[]{-0.5, 0.0, 2.0};
             }
 
-            renderer.setBounds(
-                    loc[0] - loc[2], loc[0] + loc[2],
-                    loc[1] - loc[2], loc[1] + loc[2]);
-            renderer.setMaxIterations(256);
-
-            // Random gradient for variety
             float hue = (float) Math.random();
             ColorGradient gradient = ColorGradient.fromBaseColor(
                     Color.getHSBColor(hue, 0.8f, 0.9f));
 
-            BufferedImage img = renderer.render(width, height, gradient);
-            if (img == null || !running) break;
+            for (int i = 0; i < screens.size(); i++) {
+                if (!running) return;
+                ScreenInfo si = screens.get(i);
+                FractalRenderer renderer = renderers.get(i);
 
-            panel.transitionTo(img, transitionDurationMs);
+                renderer.setBounds(
+                        loc[0] - loc[2], loc[0] + loc[2],
+                        loc[1] - loc[2], loc[1] + loc[2]);
+                renderer.setMaxIterations(256);
+
+                BufferedImage img = renderer.render(si.width, si.height, gradient);
+                if (img == null || !running) return;
+                si.panel.transitionTo(img, transitionDurationMs);
+            }
 
             // Wait for display duration
             long deadline = System.currentTimeMillis() + displayDurationMs;
@@ -119,6 +136,19 @@ public class ScreensaverController {
                     return;
                 }
             }
+        }
+    }
+
+    private static class ScreenInfo {
+        final GraphicsDevice device;
+        final ScreensaverPanel panel;
+        final int width, height;
+
+        ScreenInfo(GraphicsDevice device, ScreensaverPanel panel, int width, int height) {
+            this.device = device;
+            this.panel = panel;
+            this.width = width;
+            this.height = height;
         }
     }
 
@@ -151,7 +181,6 @@ public class ScreensaverController {
                 private int lastX = -1, lastY = -1;
                 @Override
                 public void mouseMoved(MouseEvent e) {
-                    // Ignore the first move event (initial cursor position)
                     if (lastX == -1) {
                         lastX = e.getX();
                         lastY = e.getY();
@@ -163,7 +192,6 @@ public class ScreensaverController {
                 }
             });
 
-            // Request focus when shown
             addHierarchyListener(e -> {
                 if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
                         && isShowing()) {
@@ -183,7 +211,7 @@ public class ScreensaverController {
             nextImage = image;
             alpha = 0.0f;
 
-            int steps = durationMs / 33; // ~30fps fade
+            int steps = durationMs / 33;
             float alphaStep = 1.0f / Math.max(1, steps);
 
             if (fadeTimer != null) fadeTimer.stop();

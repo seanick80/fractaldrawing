@@ -69,10 +69,37 @@ public class PaletteCycleAnimator {
     }
 
     /**
+     * Play palette cycle in a real-time preview window (looping).
+     * Returns the preview window for external stop control.
+     */
+    public AnimationPreviewWindow playRealtime(int[] iters, int width, int height,
+                                                ColorGradient baseGradient) {
+        if (iters == null || width <= 0 || height <= 0) return null;
+
+        int[] itersCopy = new int[iters.length];
+        System.arraycopy(iters, 0, itersCopy, 0, iters.length);
+
+        AnimationPreviewWindow window = new AnimationPreviewWindow(
+                "Palette Cycle Preview", width, height);
+        window.setVisible(true);
+
+        final int[] frameCounter = {0};
+        window.playLoop(fps, true, () -> {
+            if (window.isStopped()) return null;
+            float shift = (frameCounter[0] * cycleSpeed) / totalFrames;
+            frameCounter[0] = (frameCounter[0] + 1) % totalFrames;
+            ColorGradient shifted = shiftGradient(baseGradient, shift);
+            return renderer.recolorFromIters(itersCopy, width, height, shifted);
+        });
+
+        return window;
+    }
+
+    /**
      * Shift all gradient stop positions by the given offset, wrapping at 1.0.
      * Returns a new gradient; does not modify the original.
      */
-    static ColorGradient shiftGradient(ColorGradient gradient, float offset) {
+    public static ColorGradient shiftGradient(ColorGradient gradient, float offset) {
         // Normalize offset to [0, 1)
         offset = offset - (float) Math.floor(offset);
 

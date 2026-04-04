@@ -164,17 +164,6 @@ public class FractalSettingsPanel {
         panel.add(luckyBtn);
         panel.add(Box.createVerticalStrut(4));
 
-        JButton zoomAnimBtn = new JButton("Zoom Movie...");
-        zoomAnimBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
-        zoomAnimBtn.setMaximumSize(new Dimension(120, 28));
-        zoomAnimBtn.setFont(zoomAnimBtn.getFont().deriveFont(10f));
-        zoomAnimBtn.addActionListener(e ->
-                animationController.startZoomAnimation(renderer, renderController.getGradient(),
-                        renderController.getLastImage(), locationManager.getLastDirectory(),
-                        infoPanel.getProgressLabel(), panel));
-        panel.add(zoomAnimBtn);
-        panel.add(Box.createVerticalStrut(4));
-
         JButton flyoverBtn = new JButton("3D Flyover");
         flyoverBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
         flyoverBtn.setMaximumSize(new Dimension(120, 28));

@@ -37,6 +37,36 @@ public class IterationAnimator {
     public int getTotalFrames() { return (endIter - startIter) / step + 1; }
 
     /**
+     * Play iteration animation in a real-time preview window.
+     * Returns the preview window for external stop control.
+     */
+    public AnimationPreviewWindow playRealtime(FractalRenderer sourceRenderer,
+                                                ColorGradient gradient) {
+        if (width <= 0 || height <= 0 || startIter > endIter) return null;
+
+        FractalRenderer animRenderer = new FractalRenderer();
+        animRenderer.setType(sourceRenderer.getType());
+        animRenderer.setBounds(sourceRenderer.getMinRealBig(), sourceRenderer.getMaxRealBig(),
+                               sourceRenderer.getMinImagBig(), sourceRenderer.getMaxImagBig());
+        animRenderer.setRenderMode(sourceRenderer.getRenderMode());
+        animRenderer.setColorMode(sourceRenderer.getColorMode());
+
+        AnimationPreviewWindow window = new AnimationPreviewWindow(
+                "Iteration Animation Preview", width, height);
+        window.setVisible(true);
+
+        final int[] currentIter = {startIter};
+        window.playLoop(fps, false, () -> {
+            if (window.isStopped() || currentIter[0] > endIter) return null;
+            animRenderer.setMaxIterations(currentIter[0]);
+            currentIter[0] += step;
+            return animRenderer.render(width, height, gradient);
+        });
+
+        return window;
+    }
+
+    /**
      * Render iteration animation frames to the output directory.
      * Creates a fresh FractalRenderer per call to avoid mutating the caller's state.
      * Returns the number of frames written.
