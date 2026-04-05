@@ -4,6 +4,8 @@ out/
 out/**/*.jar
 # Local protoc binary (download via setup)
 tools/protoc/
+# PMD static analysis tool (download via setup)
+tools/pmd-bin-*/
 .idea/
 *.iml
 .vscode/

@@ -11,7 +11,6 @@ import java.math.MathContext;
 public final class JuliaPerturbation implements PerturbationStrategy {
 
     private static final BigDecimal FOUR = BigDecimal.valueOf(4);
-    private static final BigDecimal TWO = BigDecimal.valueOf(2);
 
     private final BigDecimal cr, ci;
 

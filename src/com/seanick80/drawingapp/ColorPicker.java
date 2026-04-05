@@ -15,7 +15,6 @@ public class ColorPicker extends JPanel {
     private Color backgroundColor = Color.WHITE;
     private final JPanel fgSwatch;
     private final JPanel bgSwatch;
-    private final DrawingCanvas canvas;
     private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
 
     private static final Color[] PALETTE = {
@@ -27,7 +26,7 @@ public class ColorPicker extends JPanel {
     };
 
     public ColorPicker(DrawingCanvas canvas) {
-        this.canvas = canvas;
+
         setLayout(new BorderLayout(4, 4));
         setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 

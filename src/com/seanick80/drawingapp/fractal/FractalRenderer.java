@@ -365,7 +365,6 @@ public class FractalRenderer {
             BigDecimal rangeImag = maxImag.subtract(minImag);
 
             boolean useBigDecimal;
-            boolean usePerturbationOnly = false;
             boolean useBigDecimalOnly = false;
 
             switch (renderMode) {
@@ -378,7 +377,6 @@ public class FractalRenderer {
                     break;
                 case PERTURBATION:
                     useBigDecimal = true;
-                    usePerturbationOnly = true;
                     break;
                 default: // AUTO
                     useBigDecimal = rangeReal.abs().doubleValue() < BIGDECIMAL_THRESHOLD
@@ -571,12 +569,6 @@ public class FractalRenderer {
         image.setRGB(0, 0, ctx.width, ctx.height, ctx.rgb, 0, ctx.width);
         progressiveRgb = null;
         return image;
-    }
-
-    private int computeOrCache(double cx, double cy, double tolerance) {
-        int iter = cache.lookup(cx, cy, tolerance);
-        if (iter != IterationQuadTree.CACHE_MISS) return iter;
-        return type.iterate(cx, cy, maxIterations);
     }
 
     private BufferedImage renderDouble(int width, int height, ColorGradient gradient) {

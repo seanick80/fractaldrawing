@@ -11,7 +11,6 @@ import java.math.MathContext;
 public final class MandelbrotPerturbation implements PerturbationStrategy {
 
     private static final BigDecimal FOUR = BigDecimal.valueOf(4);
-    private static final BigDecimal TWO = BigDecimal.valueOf(2);
 
     @Override
     public int computeReferenceOrbit(BigDecimal cr, BigDecimal ci,

@@ -33,7 +33,6 @@ class TerrainRenderTest {
     @Test @LargeTest @Timeout(10)
     void colormap() {
         int power = 6;
-        int mapSize = (1 << power) + 1;
         float[] heightmap = TerrainRenderer.generateTerrain(power, 0.5f, 42);
         int[] colormap = TerrainRenderer.buildColorMap(heightmap, TestHelpers.gradient());
         assertEquals(heightmap.length, colormap.length);

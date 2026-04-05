@@ -160,10 +160,7 @@ public class ScreensaverController {
         private BufferedImage nextImage;
         private float alpha = 1.0f;
         private Timer fadeTimer;
-        private final Runnable exitCallback;
-
         ScreensaverPanel(int width, int height, Runnable exitCallback) {
-            this.exitCallback = exitCallback;
             setBackground(Color.BLACK);
             setPreferredSize(new Dimension(width, height));
 

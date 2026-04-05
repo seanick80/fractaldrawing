@@ -7,7 +7,6 @@ import java.math.MathContext;
 public final class JuliaType implements FractalType {
 
     private static final BigDecimal FOUR = BigDecimal.valueOf(4);
-    private static final BigDecimal TWO = BigDecimal.valueOf(2);
 
     private final double cr, ci;
     private final BigDecimal crBig, ciBig;

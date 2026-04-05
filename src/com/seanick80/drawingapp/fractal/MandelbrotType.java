@@ -7,7 +7,6 @@ import java.math.MathContext;
 public final class MandelbrotType implements FractalType {
 
     private static final BigDecimal FOUR = BigDecimal.valueOf(4);
-    private static final BigDecimal TWO = BigDecimal.valueOf(2);
     private static final PerturbationStrategy PERTURBATION = new MandelbrotPerturbation();
 
     @Override public String name() { return "MANDELBROT"; }

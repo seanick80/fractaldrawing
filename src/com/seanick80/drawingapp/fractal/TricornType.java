@@ -11,7 +11,6 @@ import java.math.MathContext;
 public final class TricornType implements FractalType {
 
     private static final BigDecimal FOUR = BigDecimal.valueOf(4);
-    private static final BigDecimal TWO = BigDecimal.valueOf(2);
 
     @Override public String name() { return "TRICORN"; }
 

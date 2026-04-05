@@ -109,7 +109,6 @@ class ColorGradientTest {
         copy.addStop(0.5f, Color.GREEN);
         assertEquals(original.getStops().size(), copy.getStops().size() - 1);
 
-        Color copyMid = copy.getColorAt(0.5f);
         assertEquals(origMid.getRGB(), original.getColorAt(0.5f).getRGB());
         // The copy has an extra stop, so its midpoint may differ — just verify the original is unchanged
         assertEquals(origMid.getRGB(), original.getColorAt(0.5f).getRGB());

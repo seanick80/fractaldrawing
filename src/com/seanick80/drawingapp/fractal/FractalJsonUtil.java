@@ -9,7 +9,6 @@ import java.util.Map;
 public class FractalJsonUtil {
 
     public static Map<String, String> parseJson(String json) {
-        Map<String, String> map = new LinkedHashMap<>();
         json = json.trim();
         if (json.startsWith("{")) json = json.substring(1);
         if (json.endsWith("}")) json = json.substring(0, json.length() - 1);

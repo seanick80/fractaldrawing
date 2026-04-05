@@ -13,7 +13,6 @@ import java.io.RandomAccessFile;
 public class AviWriter implements AutoCloseable {
 
     private final RandomAccessFile raf;
-    private final File file;
     private final int width;
     private final int height;
     private final int fps;
@@ -30,7 +29,6 @@ public class AviWriter implements AutoCloseable {
     private long moviSizePos;
 
     public AviWriter(File file, int width, int height, int fps) throws IOException {
-        this.file = file;
         this.width = width;
         this.height = height;
         this.fps = fps;

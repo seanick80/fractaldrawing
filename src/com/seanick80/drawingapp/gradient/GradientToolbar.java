@@ -6,7 +6,7 @@ import com.seanick80.drawingapp.fractal.PaletteCycleAnimator;
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
-import java.awt.image.BufferedImage;
+
 import java.io.File;
 
 /**
@@ -137,7 +137,7 @@ public class GradientToolbar extends JPanel {
                 float shift = (frame * cycleSpeed) / totalFrames;
                 frame = (frame + 1) % totalFrames;
                 ColorGradient shifted = PaletteCycleAnimator.shiftGradient(baseGrad, shift);
-                BufferedImage img = paletteCycleRenderer.recolorFromIters(itersCopy, w, h, shifted);
+                paletteCycleRenderer.recolorFromIters(itersCopy, w, h, shifted);
 
                 // Update the gradient editor preview to show shifted gradient
                 SwingUtilities.invokeLater(() -> editorPanel.repaint());
