@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build and run tests
-# Usage: ./test.sh [small|medium|large|parser|all|legacy]
+# Usage: ./test.sh [small|medium|large|parser|all]
 set -euo pipefail
 
 # Convert /c/path to C:/path for Java on Windows
@@ -31,19 +31,11 @@ fi
 
 MODE="${1:-all}"
 
-# Legacy runner: the original FractalRenderTest.main()
-if [ "$MODE" = "legacy" ]; then
-    echo "Running legacy tests..."
-    java -ea -cp "$OUT;$CP" com.seanick80.drawingapp.fractal.FractalRenderTest
-    exit 0
-fi
-
 # JUnit 5 console launcher
 JUNIT_JAR="$(winpath "$LIB/junit-platform-console-standalone-1.11.4.jar")"
 if [ ! -f "$LIB/junit-platform-console-standalone-1.11.4.jar" ]; then
-    echo "ERROR: JUnit JAR not found. Falling back to legacy runner..."
-    java -ea -cp "$OUT;$CP" com.seanick80.drawingapp.fractal.FractalRenderTest
-    exit 0
+    echo "ERROR: JUnit JAR not found."
+    exit 1
 fi
 
 TAG_FILTER=""
@@ -53,7 +45,7 @@ case "$MODE" in
     large)   TAG_FILTER="--include-tag=large" ;;
     parser)  TAG_FILTER="--include-tag=parser" ;;
     all)     TAG_FILTER="" ;;
-    *)       echo "Usage: $0 [small|medium|large|parser|all|legacy]"; exit 1 ;;
+    *)       echo "Usage: $0 [small|medium|large|parser|all]"; exit 1 ;;
 esac
 
 echo "Running JUnit tests${TAG_FILTER:+ (filter: $TAG_FILTER)}..."

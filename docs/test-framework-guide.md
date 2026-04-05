@@ -2,9 +2,9 @@
 
 ## Current State
 
-All 521 assertions live in a single file: `FractalRenderTest.java` (3700+ lines). It uses a hand-rolled `check(name, boolean)` method, a monolithic `main()`, and reports only PASS/FAIL with no expected-vs-actual output. Tests of layers, fills, tools, gradients, undo, dock panels, FDP serialization, and animations are all mixed in alongside fractal rendering tests.
+196 tests across 25 JUnit 5 test classes, colocated with the source files they test. Tests use composed annotations (`@SmallTest`, `@MediumTest`, `@LargeTest`) for size-based filtering, plus `@Tag("parser")` for file format tests. The legacy monolithic `FractalRenderTest.java` has been deleted.
 
-The benchmark suite (`FractalBenchmark.java`) is separate and CLI-driven, which is fine.
+The benchmark suite (`FractalBenchmark.java`) is separate and CLI-driven, located at `data/benchmarks/`.
 
 ## Goals
 
@@ -380,48 +380,17 @@ Usage:
 
 ---
 
-## Migration Strategy
+## Migration Status — Complete
 
-### Phase 1: Infrastructure
-1. Download `junit-platform-console-standalone-1.11.4.jar` to `lib/`
-2. Create `SmallTest.java`, `MediumTest.java`, `LargeTest.java` composed annotations
-3. Extract `TestHelpers.java` from the bottom of `FractalRenderTest.java` (shared helper methods)
-4. Update `test.sh` to use JUnit console launcher
-5. Update `build.sh` to include JUnit JAR in classpath
+All 5 phases are done. The monolithic `FractalRenderTest.java` has been deleted.
 
-### Phase 2: Migrate Small Tests
-Move the simplest, most isolated tests first. Each migration step:
-1. Create the new test class next to the source file it tests
-2. Annotate each method with `@Test @SmallTest`
-3. Convert `check("name", condition)` calls to `assertEquals` / `assertTrue`
-4. Remove the test method from the old `FractalRenderTest.java`
-5. Run both old and new suites — verify same pass count
-
-Order: `FillProviderTest` → `StrokeStyleTest` → `ColorGradientTest` → `LayerManagerTest` → `UndoManagerTest` → remaining small tests.
-
-### Phase 3: Migrate Medium Tests
-Same process for integration tests. File I/O tests should use `@TempDir`:
-```java
-@Test @MediumTest @Tag("parser")
-void fdpRoundTrip(@TempDir Path tempDir) throws Exception {
-    File file = tempDir.resolve("test.fdp").toFile();
-    // ...
-}
-```
-
-Order: `DrawingToolTest` → `FdpSerializerTest` → `GradientFileTest` → `JsonLocationTest` → remaining medium tests.
-
-### Phase 4: Migrate Large Tests
-Render tests last — they're the most complex and slowest. Add `@Timeout` annotations:
-```java
-@Test @LargeTest @Timeout(10)
-void mandelbrotDoubleGolden() {
-    // ...
-}
-```
-
-### Phase 5: Delete old FractalRenderTest.java
-Once all tests are migrated, delete the original monolith and update CLAUDE.md.
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Infrastructure (JUnit JAR, annotations, TestHelpers, test.sh) | Done |
+| 2 | Migrate small tests (11 classes, 110 tests) | Done |
+| 3 | Migrate medium tests (8 classes, 48 tests) | Done |
+| 4 | Migrate large tests (6 classes, 38 tests) | Done |
+| 5 | Delete legacy FractalRenderTest.java | Done |
 
 ---
 
@@ -457,13 +426,14 @@ This lets `./test.sh parser` run all format-related tests across sizes.
 - **No test interdependence** — each test sets up its own state
 - **Temp files via `@TempDir`** — no manual cleanup needed
 
-## Counts After Migration
+## Final Counts
 
-| Size | Test classes | Approx. test methods |
+| Size | Test classes | Test methods |
 |---|---|---|
-| @SmallTest | 11 | ~50 |
-| @MediumTest | 8 | ~45 |
-| @LargeTest | 6 | ~25 |
-| **Total** | **25** | **~120** |
+| @SmallTest | 11 | 110 |
+| @MediumTest | 8 | 48 |
+| @LargeTest | 6 | 38 |
+| @Tag("parser") | 3 | 15 |
+| **Total** | **25** | **196** |
 
-(Individual `check()` assertions within methods will become multiple `assert*()` calls — the method count may change slightly as some large methods with many checks get split into focused tests.)
+Note: `@Tag("parser")` tests overlap with `@MediumTest` — they are a secondary filter across FdpSerializerTest, GradientFileTest, and JsonLocationTest.

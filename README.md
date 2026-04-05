@@ -85,7 +85,7 @@ java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.DrawingApp 
 
 ## Testing
 
-Tests are being migrated from a monolithic test file to JUnit 5 with size-based filtering.
+196 tests across 25 JUnit 5 test classes, organized by size with tag-based filtering.
 
 ```bash
 # Run all JUnit tests
@@ -96,9 +96,6 @@ Tests are being migrated from a monolithic test file to JUnit 5 with size-based 
 ./test.sh medium    # integration tests (< 500ms each)
 ./test.sh large     # render tests (< 5s each)
 ./test.sh parser    # file format tests
-
-# Run legacy test suite (521 assertions, being migrated)
-./test.sh legacy
 ```
 
 Test annotations: `@SmallTest`, `@MediumTest`, `@LargeTest` (composed annotations wrapping JUnit `@Tag`). Tests are colocated with source files.
@@ -197,7 +194,7 @@ src/com/seanick80/drawingapp/
 │   ├── AviWriter.java           # Uncompressed RGB AVI writer
 │   ├── FractalBenchmark.java    # CLI performance benchmark
 │   ├── PerturbationEval.java    # CLI perturbation correctness evaluation
-│   └── FractalRenderTest.java   # Legacy test suite (being migrated to JUnit)
+│   └── FractalRenderJUnit5Test.java # Render determinism, golden checksums (large)
 └── tools/
     ├── Tool.java                # Tool interface with capability methods
     ├── ToolSettingsBuilder.java # Shared UI builders for stroke/fill panels
