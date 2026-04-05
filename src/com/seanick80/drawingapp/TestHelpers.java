@@ -7,6 +7,7 @@ import com.seanick80.drawingapp.gradient.ColorGradient;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.RandomAccessFile;
 import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.Set;
@@ -123,5 +124,38 @@ public final class TestHelpers {
             for (File f : files) f.delete();
         }
         dir.delete();
+    }
+
+    /** Compute a simple pixel checksum (sum of R+G+B for all pixels). */
+    public static long pixelChecksum(BufferedImage img) {
+        int[] pixels = getPixels(img);
+        long sum = 0;
+        for (int p : pixels) {
+            sum += (p >> 16) & 0xFF;
+            sum += (p >> 8) & 0xFF;
+            sum += p & 0xFF;
+        }
+        return sum;
+    }
+
+    /** Check if all pixels in an image match the given RGB (ignoring alpha). */
+    public static boolean isAllColor(BufferedImage img, int rgb) {
+        for (int y = 0; y < img.getHeight(); y++) {
+            for (int x = 0; x < img.getWidth(); x++) {
+                if ((img.getRGB(x, y) & 0x00FFFFFF) != (rgb & 0x00FFFFFF)) return false;
+            }
+        }
+        return true;
+    }
+
+    /** Read a little-endian 32-bit integer from a RandomAccessFile. */
+    public static int readIntLE(RandomAccessFile raf) throws java.io.IOException {
+        int b0 = raf.read(), b1 = raf.read(), b2 = raf.read(), b3 = raf.read();
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    }
+
+    /** Perceived brightness of a color (0.0 to 1.0). */
+    public static float brightness(Color c) {
+        return (c.getRed() * 0.299f + c.getGreen() * 0.587f + c.getBlue() * 0.114f) / 255f;
     }
 }

@@ -129,13 +129,13 @@ Tests cover:
 
 ```bash
 # Performance benchmark
-java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.FractalBenchmark benchmarks/
+java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.FractalBenchmark data/benchmarks/
 
 # Perturbation correctness evaluation
-java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.PerturbationEval benchmarks/
+java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.PerturbationEval data/benchmarks/
 
 # Single location with custom size
-java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.FractalBenchmark benchmarks/bigdecimal_location.json 800 600
+java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.FractalBenchmark data/benchmarks/bigdecimal_location.json 800 600
 ```
 
 ## Architecture
