@@ -8,17 +8,20 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 
 ### Drawing Tools
 - **Pencil, Line, Rectangle, Oval, Eraser, Flood Fill** with configurable stroke size
+- **Stroke styles**: Solid, Dashed, Dotted, Dash-Dot, Rough/Sketchy — on all shape and line tools
 - **Color picker**: 20-color palette + custom color chooser, foreground/background colors
-- **Pluggable fill system**: Solid, Gradient, Custom Gradient, Checkerboard, Diagonal Stripes
+- **Pluggable fill system**: Solid, Gradient, Custom Gradient, Checkerboard, Diagonal Stripes, Crosshatch, Dot Grid, Horizontal Stripes, Noise
+- **Tool-owned settings panels**: Each tool builds its own settings UI — stroke, fill, and style all sync correctly on tool switch
 - **Undo/Redo**: Up to 80 levels with automatic compaction (Ctrl+Z / Ctrl+Y)
-- **File I/O**: Open and save PNG, JPG, BMP images
+- **File I/O**: Open/Save PNG, JPG, BMP. Save (Ctrl+S) re-saves to current file; Save As (Ctrl+Shift+S) for new file. Filename shown in title bar.
 
 ### Layer System
 - **Up to 20 layers** with per-layer opacity, visibility toggle, and lock
 - **8 blend modes**: Normal, Multiply, Screen, Overlay, Soft Light, Hard Light, Difference, Add
-- **Layer panel**: Sidebar with thumbnails, add/delete, duplicate, reorder (up/down), merge down, flatten
+- **Layer panel**: Sidebar with thumbnails, add/delete, duplicate, reorder (drag or up/down buttons), merge down, flatten
 - **Layer operations**: Double-click to rename, checkbox for visibility, lock to prevent edits
 - **Compositing**: Real-time layer compositing with custom blend mode implementation
+- **Safety**: Drawing blocked on invisible/locked layers with user notification
 
 ### Fractal Explorer
 - **5 fractal types**: Mandelbrot, Julia, Burning Ship, Tricorn, and Magnet Type I — selectable from dropdown and menu
@@ -27,99 +30,113 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 - **Auto-switching**: Renders in double precision at shallow zoom (fast), automatically switches to perturbation + BigDecimal past ~10^13 zoom
 - **Render modes**: AUTO (default), DOUBLE, BIGDECIMAL, PERTURBATION — selectable for benchmarking
 - **Color modes**: Mod (cyclic) for consistent color detail at all zoom levels, or Division (linear) for smooth gradients
-- **Image zoom**: Scroll wheel zooms the rendered image (0.25x–32x) centered on cursor for pixel-level inspection without re-rendering. View resets on next fractal render
+- **Interior pruning**: Hierarchical quadtree subdivision with 4-corner quick rejection for faster rendering of interior-heavy regions
+- **Pixel guessing**: Interpolation-based rendering optimization that fills interior blocks, with toggle in the Fractal menu
+- **Image zoom**: Scroll wheel zooms the rendered image (0.25x–32x) centered on cursor for pixel-level inspection without re-rendering
 - **Click and drag panning**: Drag to pan the viewport — the raster image shifts with the cursor for instant visual feedback, then re-renders on release
 - **Fractal zoom**: Ctrl+scroll zooms in/out of the fractal (changes complex-plane viewport and triggers re-render). Left/right click also zooms in/out centered on click position
-- **Cross-render cache**: Double-precision quadtree cache for moderate zoom; BigDecimal pixel-mapping cache for deep zoom. On zoom, viewport origin snapping aligns pixel grids for 25% reuse; on pan, 75%+ reuse. Iteration results from the previous render are mapped to new pixel positions via O(width+height) BigDecimal divisions.
-- **Custom color gradients**: Full gradient editor with save/load support. Double-click a stop marker in the preview bar to open a color chooser — R/G/B control points auto-update to match.
-- **Palette-to-gradient**: Click any color in the palette while the fractal tool is active to instantly generate a gradient favoring that color with triadic complementary hues
+- **Cross-render cache**: Double-precision quadtree cache for moderate zoom; BigDecimal pixel-mapping cache for deep zoom. On zoom, viewport origin snapping aligns pixel grids for 25% reuse; on pan, 75%+ reuse
+- **Custom color gradients**: Full gradient editor with save/load support. Double-click a stop marker in the preview bar to open a color chooser
+- **Palette-to-gradient**: Click any palette color while the fractal tool is active to auto-generate a triadic gradient
 - **"I Feel Lucky"**: Button that finds a random interesting Mandelbrot location with varied boundary detail
 - **Save/Load locations**: Export and import fractal coordinates as JSON for bookmarking and sharing
-- **Preset locations**: Built-in menu with interesting locations from Seahorse Valley to 10^18 zoom, plus a "Saved Locations" menu auto-populated from `data/locations/`
-- **Async rendering**: Non-blocking renders with cancellation support for responsive UI
-- **Render progress**: Live percentage, row count, elapsed time, and ETA display during slow renders
+- **Preset locations**: Built-in menu with interesting locations from Seahorse Valley to 10^18 zoom, plus "Saved Locations" auto-populated from `data/locations/`
+- **Async rendering**: Non-blocking renders with cancellation support and live progress (percentage, row count, elapsed time, ETA)
 - **Extensible type system**: New fractal types auto-populate UI via registry — implement `FractalType`, register, done
+
+### Animations
+- **Zoom animation**: Keyframe-based exponential zoom with configurable frame count and interpolation, exported as numbered PNGs + AVI
+- **Palette cycle**: Rotates gradient stops through a full cycle, exported as AVI
+- **Iteration animation**: Animates max iteration count from low to high, exported as AVI
+- **Screensaver mode**: Auto-discovers interesting Mandelbrot locations and renders them in sequence with crossfade transitions
+
+### 3D Terrain
+- **Fractal terrain renderer**: Converts fractal iteration data into a heightmap, applies colormap from the gradient, and renders a 3D perspective view with fog
+
+### Dockable Panels
+- **Dock system**: Layer panel, gradient editor, and fractal info panel are dockable — can be placed on any edge (West, East, North, South) or hidden
+- **Drag reorder**: Panels within an edge can be reordered
+
+### Project Format
+- **FDP (Fractal Drawing Project)**: Custom Protobuf-based format preserving all layers (with pixel data, opacity, blend mode, visibility, lock, name), fractal state, and gradient. Standard image formats (PNG/JPG/BMP) flatten all layers on export.
 
 ## Build & Run
 
-Requires Java 17+. Clone the repo and run — bundled data files (gradients, saved locations) are auto-detected.
+Requires Java 17+. No Maven or Gradle needed — just `javac` and the bundled JARs in `lib/`.
 
 ```bash
 git clone https://github.com/seanick80/fractaldrawing.git
 cd fractaldrawing
 
-# Unix/Git Bash
+# Build and run
 ./build.sh run
 
-# Windows
-build.cmd run
-
-# Or build separately, then run
-./build.sh       # compile to out/
-./run.sh         # run (auto-builds if needed)
+# Or build separately
+./build.sh
 ```
 
-The app auto-discovers the `data/` directory relative to its classpath, providing default gradients and saved locations without manual configuration. CLI overrides are available:
+The app auto-discovers the `data/` directory relative to its classpath, providing default gradients and saved locations. CLI overrides are available:
 
 ```bash
-java -cp out com.seanick80.drawingapp.DrawingApp \
+java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.DrawingApp \
     --gradient-dir path/to/gradients \
     --location-dir path/to/locations
 ```
 
 ## Testing
 
-```bash
-# Run regression tests (190+ assertions covering rendering, layers, and fractal types)
-./test.sh       # Unix/Git Bash
-test.cmd        # Windows
+Tests are being migrated from a monolithic test file to JUnit 5 with size-based filtering.
 
-# Or directly
-java -ea -cp out com.seanick80.drawingapp.fractal.FractalRenderTest
+```bash
+# Run all JUnit tests
+./test.sh
+
+# Run by size
+./test.sh small     # unit tests (< 50ms each)
+./test.sh medium    # integration tests (< 500ms each)
+./test.sh large     # render tests (< 5s each)
+./test.sh parser    # file format tests
+
+# Run legacy test suite (521 assertions, being migrated)
+./test.sh legacy
 ```
+
+Test annotations: `@SmallTest`, `@MediumTest`, `@LargeTest` (composed annotations wrapping JUnit `@Tag`). Tests are colocated with source files.
 
 Tests cover:
 - Golden-value pixel checksums for Mandelbrot, Julia (double, perturbation, BigDecimal)
 - Perturbation vs BigDecimal correctness (structural match, interior pixel accuracy)
 - Deep zoom overflow handling (zoom > 10^17)
-- Double precision degradation detection
 - All 5 fractal types: iteration properties, BigDecimal/double agreement, rendering validity
 - Cross-mode rendering (all types × DOUBLE + BIGDECIMAL)
-- Type registry round-trip (name → lookup → match)
-- ViewportCalculator aspect-ratio correction, ColorMapper LUT construction
-- QuadTree cache contract, JSON parsing, gradient consistency
-- Cache stability across zoom cycles, render mode switching
-- Interior pruning correctness: pixel-identical output with pruning on/off at spiky edges
-- Load/save correctness: Mandelbrot type preserved when JSON contains Julia fields
-- Deep zoom cache safety: no false hits from stale double-precision cache entries
-- Previous-render BigDecimal cache: 25% reuse on 2x zoom, 75% on pan, pixel-identical to from-scratch
-- Shallow zoom quadtree cache: pan reuse verified with correctness checks
-- Zoom animation: keyframe interpolation, frame count, AVI writer round-trip
-- Layer system: creation, properties, opacity clamping, compositing, visibility, blend modes, reorder, duplicate, merge, flatten, clear, thumbnails
+- Interior pruning correctness: pixel-identical output with pruning on/off
+- Pixel guessing accuracy vs exact rendering
+- Layer system: creation, opacity, visibility, blend modes, compositing, reorder, merge, flatten
+- Fill providers: solid, gradient, custom gradient, checkerboard, stripes, crosshatch, dot grid, noise
+- Stroke styles: all 5 styles create valid strokes
+- FDP project format: round-trip serialization for layers, fractal state, gradients, BigDecimal precision
+- Gradient files: save/load, interpolation, copy semantics
+- JSON location parsing: round-trip, edge cases
+- Zoom animation: keyframe interpolation, frame rendering
+- Palette cycle and iteration animation
+- AVI writer: RIFF header, frame count
+- Undo manager: basic ops, compaction, multi-layer support
+- Dock system: docking, undocking, edge placement, hide/show
+- Drawing tools: pencil, line, rectangle (outline + filled), oval, eraser, flood fill
+- Tool capabilities: hasStrokeSize, hasFill, default sizes, names
 
 ## Benchmarking
 
 ```bash
-# Performance benchmark — runs all locations, compares modes for deep zoom
-java -cp out com.seanick80.drawingapp.fractal.FractalBenchmark benchmarks/
+# Performance benchmark
+java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.FractalBenchmark benchmarks/
 
-# Perturbation correctness evaluation — pixel-by-pixel comparison vs BigDecimal
-java -cp out com.seanick80.drawingapp.fractal.PerturbationEval benchmarks/
+# Perturbation correctness evaluation
+java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.PerturbationEval benchmarks/
 
 # Single location with custom size
-java -cp out com.seanick80.drawingapp.fractal.FractalBenchmark benchmarks/bigdecimal_location.json 800 600
+java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.FractalBenchmark benchmarks/bigdecimal_location.json 800 600
 ```
-
-Benchmark locations included:
-- `bigdecimal_location.json` — zoom 4.16e13, 456 iterations
-- `deeper_location.json` — zoom 3.41e17, 706 iterations
-- `fractal_zoomed_5.json` — zoom 2.73e18, 506 iterations
-- `perturbation_error.json` — zoom 4.50e15, 41% interior pixels (perturbation stress test)
-- `double_seahorse.json` — Seahorse valley, moderate zoom
-- `double_mini_mandelbrot.json` — Mini Mandelbrot at -1.767
-- `mandelbrot_cardioid.json` — Shallow cardioid view, interior-heavy
-- `mandelbrot_bulb_edge.json` — Period-2 bulb edge, 512 iterations
-- `mandelbrot_deep_interior.json` — Cardioid center at zoom 2e14
 
 ## Architecture
 
@@ -128,44 +145,70 @@ data/
 ├── gradients/               # Default .grd color gradient files
 └── locations/               # Saved fractal locations (.json), auto-populates menu
 
+docs/
+├── test-framework-guide.md  # Test refactor plan (JUnit 5 migration)
+├── future_work.md           # Planned features
+├── layers_and_objects.md    # Layer system design (historical)
+└── refactoring_options.md   # Refactoring decisions (historical)
+
+lib/
+├── protobuf-java-4.29.3.jar                    # Protobuf runtime for FDP format
+└── junit-platform-console-standalone-1.11.4.jar # JUnit 5 test runner
+
 src/com/seanick80/drawingapp/
 ├── DrawingApp.java          # Main frame, menus (File, Edit, Fractal)
 ├── DrawingCanvas.java       # Canvas with layer compositing and event routing
-├── ToolBar.java             # Tool selection and settings panel
+├── ToolBar.java             # Tool selection and settings panel host
 ├── UndoManager.java         # Layer-aware undo/redo with compaction
+├── SmallTest.java           # @SmallTest composed annotation (@Tag("small"))
+├── MediumTest.java          # @MediumTest composed annotation (@Tag("medium"))
+├── LargeTest.java           # @LargeTest composed annotation (@Tag("large"))
+├── TestHelpers.java         # Shared test utilities
 ├── layers/
 │   ├── Layer.java               # Single layer: image + opacity + blend + visibility
 │   ├── LayerManager.java        # Ordered layer list, compositing, max 20 layers
-│   ├── LayerPanel.java          # Sidebar UI: list, controls, opacity slider, blend dropdown
+│   ├── LayerPanel.java          # Sidebar UI with drag-to-reorder
 │   ├── BlendMode.java           # Enum: Normal, Multiply, Screen, Overlay, etc.
 │   └── BlendComposite.java      # Custom AWT Composite for blend mode pixel math
-├── fills/                   # Pluggable fill providers
+├── fills/                   # Pluggable fill providers (9 types)
 ├── gradient/                # Color gradient editor and interpolation
+├── dock/                    # Dockable panel system
+├── project/                 # FDP serialization (Protobuf)
 ├── fractal/
 │   ├── FractalType.java         # Interface for fractal iteration
 │   ├── FractalTypeRegistry.java # Dynamic type registry (auto-populates UI)
-│   ├── MandelbrotType.java      # Mandelbrot: z²+c
-│   ├── JuliaType.java           # Julia: z²+c (fixed c)
-│   ├── BurningShipType.java     # Burning Ship: (|Re(z)|+i|Im(z)|)²+c
-│   ├── TricornType.java         # Tricorn: conj(z)²+c
-│   ├── MagnetTypeIType.java     # Magnet I: ((z²+c-1)/(2z+c-2))²
-│   ├── PerturbationStrategy.java    # Interface for perturbation theory
+│   ├── MandelbrotType.java      # z²+c
+│   ├── JuliaType.java           # z²+c (fixed c)
+│   ├── BurningShipType.java     # (|Re(z)|+i|Im(z)|)²+c
+│   ├── TricornType.java         # conj(z)²+c
+│   ├── MagnetTypeIType.java     # ((z²+c-1)/(2z+c-2))²
+│   ├── PerturbationStrategy.java    # Perturbation theory interface
 │   ├── MandelbrotPerturbation.java  # Mandelbrot perturbation impl
 │   ├── JuliaPerturbation.java       # Julia perturbation impl
-│   ├── FractalRenderer.java    # Rendering orchestrator: mode selection, async
-│   ├── ViewportCalculator.java # Aspect-ratio-corrected viewport math
-│   ├── FractalColorMapper.java # Color LUT construction + mapping
-│   ├── IterationQuadTree.java  # Spatial cache for iteration counts
-│   ├── FractalJsonUtil.java    # Shared JSON parsing
-│   ├── ZoomAnimator.java      # Zoom movie generator with keyframe interpolation
-│   ├── AviWriter.java          # Uncompressed RGB AVI video writer
-│   ├── FractalBenchmark.java   # CLI performance benchmark
-│   ├── PerturbationEval.java   # CLI perturbation correctness evaluation
-│   └── FractalRenderTest.java  # Regression test suite
+│   ├── FractalRenderer.java     # Rendering orchestrator: mode selection, async
+│   ├── ViewportCalculator.java  # Aspect-ratio-corrected viewport math
+│   ├── FractalColorMapper.java  # Color LUT construction + mapping
+│   ├── IterationQuadTree.java   # Spatial cache for iteration counts
+│   ├── ZoomAnimator.java        # Zoom movie generator
+│   ├── PaletteCycleAnimator.java # Gradient rotation animation
+│   ├── IterationAnimator.java   # Iteration count animation
+│   ├── ScreensaverController.java # Auto-explore screensaver mode
+│   ├── TerrainRenderer.java     # 3D fractal terrain
+│   ├── AviWriter.java           # Uncompressed RGB AVI writer
+│   ├── FractalBenchmark.java    # CLI performance benchmark
+│   ├── PerturbationEval.java    # CLI perturbation correctness evaluation
+│   └── FractalRenderTest.java   # Legacy test suite (being migrated to JUnit)
 └── tools/
-    ├── Tool.java            # Tool interface
-    ├── FractalTool.java     # Fractal UI: zoom, pan, save/load, async render
-    └── ...                  # Pencil, Line, Rectangle, Oval, Eraser, Fill
+    ├── Tool.java                # Tool interface with capability methods
+    ├── ToolSettingsBuilder.java # Shared UI builders for stroke/fill panels
+    ├── ToolSettingsContext.java # Context for tool settings (fill registry, etc.)
+    ├── StrokeStyle.java         # Enum: Solid, Dashed, Dotted, Dash-Dot, Rough
+    ├── FractalTool.java         # Fractal UI: zoom, pan, save/load, async render
+    ├── FractalRenderController.java  # Async render orchestration
+    ├── FractalSettingsPanel.java     # Fractal tool settings UI
+    ├── FractalMenuBuilder.java       # Fractal menu construction
+    ├── FractalAnimationController.java # Animation orchestration
+    └── ...                      # Pencil, Line, Rectangle, Oval, Eraser, Fill
 ```
 
 ## Adding Custom Fills
@@ -204,24 +247,3 @@ public final class MyFractalType implements FractalType {
     }
 }
 ```
-
-## Future Work
-
-### Performance
-
-- ~~**Memory hygiene**~~ DONE — Pre-allocated render buffers, promoted BigDecimal constants to static finals, cached perturbation strategies, pre-computed pixel coordinate arrays
-- ~~**Interior pruning**~~ DONE — Hierarchical quadtree subdivision with 4-corner quick rejection
-- ~~**Pre-calculate pixel coordinates**~~ DONE — One-time computation of real/imaginary axis arrays per render
-- ~~**Cross-render cache reuse**~~ DONE — Double-precision quadtree for moderate zoom; BigDecimal pixel-mapping cache for deep zoom with viewport origin snapping (25% reuse on zoom, 75%+ on pan)
-- **Perturbation for new types** — Burning Ship, Tricorn, and Magnet currently fall back to pure BigDecimal for deep zoom
-- **Custom FixedPrecisionFloat** — Mutable fixed-width binary float using `long[]` limbs as a faster alternative to BigDecimal
-
-### Features
-
-- ~~**Click and drag panning**~~ DONE — Raster image shifts with cursor, re-renders on release
-- ~~**Gradient color picker**~~ DONE — Double-click stop markers in gradient preview bar to pick colors visually
-- ~~**Palette-to-gradient**~~ DONE — Click palette colors to auto-generate triadic gradients
-- ~~**"I Feel Lucky"**~~ DONE — Random interesting Mandelbrot location finder
-- **More fractal types** — Mandelbulb/Mandelbox (3D), Sierpinski triangle/carpet, Koch snowflake (IFS fractals)
-- **Zoom movie export** — Auto-discovers visually interesting boundary points, lets you pick a zoom target (or use current location), renders a smooth exponential zoom animation as numbered PNGs + uncompressed AVI video. Boomerang mode zooms in then back out for seamless looping.
-- **Animations** — Iteration animation, palette cycle animation
