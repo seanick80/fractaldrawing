@@ -1,6 +1,8 @@
 # Refactoring Options: Drawing App (Historical)
 
-> **Status**: All three proposals have been implemented. This document is kept as an architectural decision record.
+> **Status**: All three proposals have been implemented and polished. This document is kept as an architectural decision record.
+>
+> **Final cleanup (2026-04-05):** Removed dead `getStrokeSizePanel()`/`getFillOptionsPanel()` from `ToolSettingsContext`. Eliminated all `instanceof` checks from `ToolBar` (was 2: `CustomGradientFill` gradient wiring moved to `DrawingApp.registerDefaultFills()`, `FractalTool` gradient callback replaced by `Tool.getGradientChangeCallback()` interface method). ToolBar is now 137 lines with zero instanceof checks.
 
 ## What We Should Have Done First
 

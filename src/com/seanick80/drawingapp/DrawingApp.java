@@ -44,10 +44,10 @@ public class DrawingApp extends JFrame {
 
         undoManager = new UndoManager(80);
         fillRegistry = new FillRegistry();
-        registerDefaultFills();
+        GradientToolbar gradientToolbar = new GradientToolbar();
+        registerDefaultFills(gradientToolbar);
 
         canvas = new DrawingCanvas(800, 600, undoManager);
-        GradientToolbar gradientToolbar = new GradientToolbar();
         toolBar = new ToolBar(canvas, fillRegistry, gradientToolbar);
         colorPicker = new ColorPicker(canvas);
         statusBar = new StatusBar();
@@ -123,10 +123,12 @@ public class DrawingApp extends JFrame {
         setLocationRelativeTo(null);
     }
 
-    private void registerDefaultFills() {
+    private void registerDefaultFills(GradientToolbar gradientToolbar) {
         fillRegistry.register(new SolidFill());
         fillRegistry.register(new GradientFill());
-        fillRegistry.register(new CustomGradientFill());
+        CustomGradientFill customGradient = new CustomGradientFill();
+        customGradient.setGradient(gradientToolbar.getGradient());
+        fillRegistry.register(customGradient);
         fillRegistry.register(new CheckerboardFill());
         fillRegistry.register(new DiagonalStripeFill());
         fillRegistry.register(new CrosshatchFill());

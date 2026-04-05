@@ -85,7 +85,7 @@ java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.DrawingApp 
 
 ## Testing
 
-196 tests across 26 JUnit 5 test classes, organized by size with tag-based filtering.
+202 tests across 26 JUnit 5 test classes, organized by size with tag-based filtering.
 
 ```bash
 # Run all JUnit tests

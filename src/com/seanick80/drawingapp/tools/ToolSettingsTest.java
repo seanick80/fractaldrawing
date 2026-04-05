@@ -2,12 +2,21 @@ package com.seanick80.drawingapp.tools;
 
 import com.seanick80.drawingapp.SmallTest;
 import com.seanick80.drawingapp.fills.*;
+import com.seanick80.drawingapp.gradient.GradientToolbar;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 import javax.swing.*;
 import java.awt.*;
 
 class ToolSettingsTest {
+
+    /** Minimal ToolSettingsContext for testing panel creation. */
+    private static ToolSettingsContext testContext(FillRegistry registry) {
+        return new ToolSettingsContext() {
+            @Override public FillRegistry getFillRegistry() { return registry; }
+            @Override public GradientToolbar getGradientToolbar() { return null; }
+        };
+    }
 
     private JComboBox<?> findComboBox(Container c) {
         for (Component comp : c.getComponents()) {
@@ -107,5 +116,60 @@ class ToolSettingsTest {
         JComboBox<?> combo = findComboBox(panel);
         assertNotNull(combo);
         assertNotEquals("None", combo.getItemAt(0));
+    }
+
+    // --- Settings panel creation tests ---
+
+    @Test @SmallTest
+    void allDrawingToolsProduceSettingsPanels() {
+        FillRegistry registry = new FillRegistry();
+        registry.register(new SolidFill());
+        ToolSettingsContext ctx = testContext(registry);
+
+        assertNotNull(new PencilTool().createSettingsPanel(ctx), "PencilTool panel");
+        assertNotNull(new LineTool().createSettingsPanel(ctx), "LineTool panel");
+        assertNotNull(new RectangleTool().createSettingsPanel(ctx), "RectangleTool panel");
+        assertNotNull(new OvalTool().createSettingsPanel(ctx), "OvalTool panel");
+        assertNotNull(new EraserTool().createSettingsPanel(ctx), "EraserTool panel");
+        assertNotNull(new FillTool().createSettingsPanel(ctx), "FillTool panel");
+    }
+
+    @Test @SmallTest
+    void fractalToolProducesSettingsPanel() {
+        ToolSettingsContext ctx = testContext(new FillRegistry());
+        assertNotNull(new FractalTool().createSettingsPanel(ctx), "FractalTool panel");
+    }
+
+    @Test @SmallTest
+    void fractalToolExposesRenderer() {
+        FractalTool ft = new FractalTool();
+        assertNotNull(ft.getRenderer(), "FractalTool should expose its renderer");
+    }
+
+    @Test @SmallTest
+    void fractalToolGradientCallback() {
+        FractalTool ft = new FractalTool();
+        // onGradientChanged should be callable without error (no NPE)
+        ft.onGradientChanged();
+    }
+
+    @Test @SmallTest
+    void gradientChangeCallback() {
+        // FractalTool provides a callback; drawing tools do not
+        assertNotNull(new FractalTool().getGradientChangeCallback());
+        assertNull(new PencilTool().getGradientChangeCallback());
+        assertNull(new RectangleTool().getGradientChangeCallback());
+        assertNull(new FillTool().getGradientChangeCallback());
+    }
+
+    @Test @SmallTest
+    void customGradientFillGradientWiring() {
+        CustomGradientFill cgf = new CustomGradientFill();
+        assertNotNull(cgf.getGradient(), "Should have a default gradient");
+
+        com.seanick80.drawingapp.gradient.ColorGradient g =
+            new com.seanick80.drawingapp.gradient.ColorGradient();
+        cgf.setGradient(g);
+        assertSame(g, cgf.getGradient(), "Gradient should be settable");
     }
 }

@@ -66,6 +66,11 @@ public class FractalTool implements Tool {
     }
 
     @Override
+    public Runnable getGradientChangeCallback() {
+        return this::onGradientChanged;
+    }
+
+    @Override
     public String getName() { return "Fractal"; }
 
     @Override

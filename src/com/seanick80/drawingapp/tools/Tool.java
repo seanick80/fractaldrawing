@@ -50,4 +50,10 @@ public interface Tool {
      * Use ctx to get reusable setting components.
      */
     default JPanel createSettingsPanel(ToolSettingsContext ctx) { return null; }
+
+    /**
+     * Returns a callback to invoke when the gradient changes, or null if this tool
+     * doesn't respond to gradient changes. Used to wire the gradient toolbar.
+     */
+    default Runnable getGradientChangeCallback() { return null; }
 }
