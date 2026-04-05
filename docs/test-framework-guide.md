@@ -2,7 +2,7 @@
 
 ## Current State
 
-196 tests across 25 JUnit 5 test classes, colocated with the source files they test. Tests use composed annotations (`@SmallTest`, `@MediumTest`, `@LargeTest`) for size-based filtering, plus `@Tag("parser")` for file format tests. The legacy monolithic `FractalRenderTest.java` has been deleted.
+196 tests across 26 JUnit 5 test classes, colocated with the source files they test. Tests use composed annotations (`@SmallTest`, `@MediumTest`, `@LargeTest`) for size-based filtering, plus `@Tag("parser")` for file format tests. The legacy monolithic `FractalRenderTest.java` has been deleted.
 
 The benchmark suite (`FractalBenchmark.java`) is separate and CLI-driven, located at `data/benchmarks/`.
 
@@ -153,6 +153,7 @@ src/com/seanick80/drawingapp/
   MediumTest.java                   # @MediumTest composed annotation
   LargeTest.java                    # @LargeTest composed annotation
   TestHelpers.java                  # shared: newRenderer(), gradient(), whiteImage(), etc.
+  TestHelpersTest.java              # validates TestHelpers utility methods
   UndoManager.java
   UndoManagerTest.java
   AviWriter.java
@@ -177,7 +178,7 @@ src/com/seanick80/drawingapp/
     GradientFileTest.java           # .grd file save/load
   fractal/
     FractalRenderer.java
-    FractalRenderTest.java          # render determinism, golden checksums (large)
+    FractalRenderJUnit5Test.java     # render determinism, golden checksums (large)
     FractalTypeTest.java            # iterate() contracts (small)
     FractalTypeRenderTest.java      # all types in all modes (large)
     ViewportCalculator.java
@@ -208,6 +209,7 @@ src/com/seanick80/drawingapp/
 
 | Test Class | Location (next to) | Size | Extra Tags | Current tests to move |
 |---|---|---|---|---|
+| `TestHelpersTest` | root | small | | `pixelChecksum`, `isAllColor`, `gradient`, `readIntLE`, `brightness` |
 | `FillProviderTest` | `fills/` | small | | `testFillRegistry`, `testSolidFill`, `testGradientFill`, `testCustomGradientFill`, `testCheckerboardFill`, `testDiagonalStripeFill`, `testCrosshatchFill`, `testDotGridFill`, `testHorizontalStripeFill`, `testNoiseFill` |
 | `StrokeStyleTest` | `tools/` | small | | `testStrokeStyleEnum`, `testStrokeStyleCreateStroke` |
 | `ColorGradientTest` | `gradient/` | small | | `testColorGradientInterpolation`, `testColorGradientAddRemoveStops`, `testColorGradientFromBaseColor`, `testColorGradientCopyConstructor`, `testColorGradientCopyFrom`, `testSharedGradient` |
@@ -227,7 +229,7 @@ src/com/seanick80/drawingapp/
 | `AnimationTest` | `fractal/` | medium | | `testRecolorFromIters`, `testRecolorDifferentGradientDiffers`, `testPaletteCycleShiftGradient`, `testPaletteCycleFullRotationWraps`, `testPaletteCycleRenderToFiles`, `testIterationAnimatorFramesDiffer`, `testIterationAnimatorRenderToFiles`, `testIterationAnimatorCancel`, `testIterationAnimatorTotalFrames`, `testPaletteCycleRecolorMatchesDirectRender` |
 | `ScreensaverTest` | `fractal/` | medium | | `testScreensaverControllerLifecycle`, `testScreensaverPanelTransition`, `testScreensaverFindLocationNotNull` |
 | `DockSystemTest` | `dock/` | medium | | `testDockManagerAndDockablePanel` |
-| `FractalRenderTest` | `fractal/` | large | | `testDoubleRenderDeterministic`, `testBigDecimalMatchesPerturbation`, `testDeeperZoomAllModes`, `testPerturbationInteriorPixels`, `testDoubleProducesBlockyAtDeepZoom`, `testDoubleModeShallowZoom`, `testJuliaSetRenders`, `testIterationCountsPreservedAcrossZoom`, `testRenderModeSwitch`, `testMandelbrotDoubleGolden`, `testJuliaDoubleGolden`, `testMandelbrotPerturbationGolden`, `testMandelbrotBigDecimalGolden`, `testSevenPointedStarDeepZoom`, `testPartialRenderBug`, `testPrevRenderCacheAtShallowZoom`, `testPrevRenderCacheAtDeepZoom`, `testBug2FractalScrollWheelZoom` |
+| `FractalRenderJUnit5Test` | `fractal/` | large | | `testDoubleRenderDeterministic`, `testBigDecimalMatchesPerturbation`, `testDeeperZoomAllModes`, `testPerturbationInteriorPixels`, `testDoubleProducesBlockyAtDeepZoom`, `testDoubleModeShallowZoom`, `testJuliaSetRenders`, `testIterationCountsPreservedAcrossZoom`, `testRenderModeSwitch`, `testMandelbrotDoubleGolden`, `testJuliaDoubleGolden`, `testMandelbrotPerturbationGolden`, `testMandelbrotBigDecimalGolden`, `testSevenPointedStarDeepZoom`, `testPartialRenderBug`, `testPrevRenderCacheAtShallowZoom`, `testPrevRenderCacheAtDeepZoom`, `testBug2FractalScrollWheelZoom` |
 | `FractalTypeRenderTest` | `fractal/` | large | | `testBurningShipRendersValidImage`, `testTricornRendersValidImage`, `testMagnetRendersValidImage`, `testNewTypesInAllRenderModes` |
 | `PruningTest` | `fractal/` | large | | `testPruningIdenticalOutput`, `testPruningIdenticalAtSpikyEdges`, `testPruningMandelbrotInterior`, `testPruningSpeedupOnInterior` |
 | `PixelGuessingTest` | `fractal/` | large | | `testPixelGuessingNearIdentical`, `testPixelGuessingOnOffToggle`, `testPixelGuessingFilamentRegion` |
@@ -430,10 +432,10 @@ This lets `./test.sh parser` run all format-related tests across sizes.
 
 | Size | Test classes | Test methods |
 |---|---|---|
-| @SmallTest | 11 | 110 |
+| @SmallTest | 12 | 110 |
 | @MediumTest | 8 | 48 |
 | @LargeTest | 6 | 38 |
 | @Tag("parser") | 3 | 15 |
-| **Total** | **25** | **196** |
+| **Total** | **26** | **196** |
 
 Note: `@Tag("parser")` tests overlap with `@MediumTest` — they are a secondary filter across FdpSerializerTest, GradientFileTest, and JsonLocationTest.

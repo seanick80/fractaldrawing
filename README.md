@@ -85,7 +85,7 @@ java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.DrawingApp 
 
 ## Testing
 
-196 tests across 25 JUnit 5 test classes, organized by size with tag-based filtering.
+196 tests across 26 JUnit 5 test classes, organized by size with tag-based filtering.
 
 ```bash
 # Run all JUnit tests
@@ -139,11 +139,12 @@ java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.fractal.Fra
 
 ```
 data/
+├── benchmarks/              # Benchmark location files and baseline results
 ├── gradients/               # Default .grd color gradient files
 └── locations/               # Saved fractal locations (.json), auto-populates menu
 
 docs/
-├── test-framework-guide.md  # Test refactor plan (JUnit 5 migration)
+├── test-framework-guide.md  # JUnit 5 test framework reference
 ├── future_work.md           # Planned features
 ├── layers_and_objects.md    # Layer system design (historical)
 └── refactoring_options.md   # Refactoring decisions (historical)
