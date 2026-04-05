@@ -3574,7 +3574,7 @@ public class FractalRenderTest {
         reg.register(new GradientFill());
 
         javax.swing.JPanel panel = ToolSettingsBuilder.createFillOptionsPanel(
-            reg, null, true, null, null);
+            reg, null, true, null, null, null);
         javax.swing.JComboBox<?> combo = findComboBox(panel);
         check("fill panel has combo box", combo != null);
         if (combo != null) {
@@ -3584,9 +3584,17 @@ public class FractalRenderTest {
             check("None is selected by default", "None".equals(combo.getSelectedItem()));
         }
 
+        // With a currentFill, combo should select it
+        FillProvider solid = reg.getAll().get(0);
+        javax.swing.JPanel panelWithCurrent = ToolSettingsBuilder.createFillOptionsPanel(
+            reg, null, true, solid, null, null);
+        javax.swing.JComboBox<?> combo3 = findComboBox(panelWithCurrent);
+        check("combo initialized to current fill",
+            combo3 != null && solid.getName().equals(combo3.getSelectedItem()));
+
         // Fill tool (showNoneOption=false) should not have None
         javax.swing.JPanel panel2 = ToolSettingsBuilder.createFillOptionsPanel(
-            reg, null, false, null, null);
+            reg, null, false, null, null, null);
         javax.swing.JComboBox<?> combo2 = findComboBox(panel2);
         check("fill tool panel has no None entry",
             combo2 != null && !"None".equals(combo2.getItemAt(0)));

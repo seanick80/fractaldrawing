@@ -78,7 +78,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
     @Override
     public JPanel getFillOptionsPanel() {
         // Deprecated: tools now build their own panels via ToolSettingsBuilder
-        return ToolSettingsBuilder.createFillOptionsPanel(fillRegistry, gradientToolbar, true, null, null);
+        return ToolSettingsBuilder.createFillOptionsPanel(fillRegistry, gradientToolbar, true, null, null, null);
     }
 
     @Override

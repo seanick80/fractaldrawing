@@ -14,6 +14,7 @@ public class RectangleTool implements Tool {
     private boolean filled;
     private FillProvider fillProvider;
     private int strokeSize = 2;
+    private StrokeStyle strokeStyle = StrokeStyle.SOLID;
 
     @Override public String getName() { return "Rectangle"; }
     @Override public boolean hasStrokeSize() { return true; }
@@ -25,9 +26,11 @@ public class RectangleTool implements Tool {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.add(ToolSettingsBuilder.createStrokeSizePanel(strokeSize, this::setStrokeSize));
         panel.add(Box.createVerticalStrut(8));
+        panel.add(ToolSettingsBuilder.createStrokeStylePanel(strokeStyle, s -> this.strokeStyle = s));
+        panel.add(Box.createVerticalStrut(8));
         panel.add(ToolSettingsBuilder.createFillOptionsPanel(
                 ctx.getFillRegistry(), ctx.getGradientToolbar(), true,
-                this::setFilled, this::setFillProvider));
+                fillProvider, this::setFilled, this::setFillProvider));
         return panel;
     }
 
@@ -73,7 +76,7 @@ public class RectangleTool implements Tool {
             g.fillRect(rx, ry, rw, rh);
         }
         g.setColor(color);
-        g.setStroke(new BasicStroke(strokeSize));
+        g.setStroke(strokeStyle.createStroke(strokeSize));
         g.drawRect(rx, ry, rw, rh);
         if (dispose) g.dispose();
     }

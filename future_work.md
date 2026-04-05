@@ -26,16 +26,14 @@ Brush tool with selectable brush tips (round, square, calligraphy/angled, airbru
 Move from pure raster to a hybrid model where each drawing operation (rectangle, ellipse, line, text, etc.) is recorded as a vector object with its parameters (type, bounds, color, stroke, fill). The canvas composites all objects on repaint. A selection tool allows clicking individual shapes — hit-testing against stored geometry — to select, move, resize, or delete them out of order. This is distinct from linear undo; any shape can be removed at any time and the remaining shapes re-composite. Pairs naturally with the layer system (objects live on layers). Raster operations like pencil/brush strokes and fractals would remain as flat bitmap objects that can be reordered/deleted but not reshaped.
 
 ### Line configurability
-Enhanced line/stroke settings for all shape and line tools:
-- **Width**: Configurable stroke width with live preview (already partially implemented via stroke spinner)
+Enhanced line/stroke settings beyond what's currently implemented:
 - **Transparency**: Per-stroke alpha/opacity slider (0-100%) so individual strokes can be semi-transparent
-- **Dash patterns**: Solid, dashed, dotted, dash-dot with configurable dash lengths
 - **Cap/Join styles**: Round, square, butt cap; miter, round, bevel join — exposed in the tool settings panel
 - **Arrow heads**: Optional start/end arrow heads for the line tool
 - **Stroke textures**: Natural media effects (chalk, charcoal, marker, watercolor) applied along the stroke path. Implemented as BufferedImage-based brush tips stamped at intervals along the path with jitter for a natural look.
 
 ### Textures and patterns
-**Phase 1 (done):** Pattern fills (crosshatch, dot grid, horizontal stripes, noise) and stroke styles (solid, dashed, dotted, dash-dot, rough/sketchy) for pencil and line tools.
+**Phase 1 (done):** Pattern fills (crosshatch, dot grid, horizontal stripes, noise) and stroke styles (solid, dashed, dotted, dash-dot, rough/sketchy) for all drawing tools (pencil, line, rectangle, oval).
 
 **Phase 2 (future):** Natural media brush tips (chalk, charcoal, marker, crayon, watercolor) stamped along the path with configurable spacing, opacity variance, and rotation jitter. Custom pattern image loading from file. Colorization support.
 

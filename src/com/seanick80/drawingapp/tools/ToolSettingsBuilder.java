@@ -140,6 +140,7 @@ public class ToolSettingsBuilder {
      * @param fillRegistry      registry of available fill providers
      * @param gradientToolbar   the gradient toolbar (may be null)
      * @param showNoneOption    whether to show a "None" entry at the top (true for shape tools)
+     * @param currentFill       the tool's current fill provider (used to initialize the combo), or null
      * @param onFilledChanged   callback when filled state changes (may be null)
      * @param onFillChanged     callback when fill provider changes
      */
@@ -147,6 +148,7 @@ public class ToolSettingsBuilder {
             FillRegistry fillRegistry,
             GradientToolbar gradientToolbar,
             boolean showNoneOption,
+            FillProvider currentFill,
             Consumer<Boolean> onFilledChanged,
             Consumer<FillProvider> onFillChanged) {
 
@@ -170,6 +172,12 @@ public class ToolSettingsBuilder {
         }
         fillCombo.setMaximumSize(new Dimension(120, 28));
         fillCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        // Initialize combo to match the tool's current fill state
+        if (currentFill != null) {
+            fillCombo.setSelectedItem(currentFill.getName());
+        }
+
         panel.add(fillCombo);
 
         JPanel gradientPreview = new JPanel() {
@@ -320,6 +328,19 @@ public class ToolSettingsBuilder {
             }
             notifyChanges.run();
         });
+
+        // Initialize visibility and angle dial from current fill
+        if (currentFill != null) {
+            boolean isCustom = currentFill instanceof CustomGradientFill;
+            boolean hasAngle = currentFill instanceof AngledFillProvider;
+            gradientPreview.setVisible(isCustom && !hasGradToolbar);
+            editGradientBtn.setVisible(isCustom && !hasGradToolbar);
+            angleLabel.setVisible(hasAngle);
+            angleDial.setVisible(hasAngle);
+            if (hasAngle) {
+                dialAngle[0] = ((AngledFillProvider) currentFill).getAngleDegrees();
+            }
+        }
 
         panel.add(Box.createVerticalStrut(4));
         panel.add(gradientPreview);

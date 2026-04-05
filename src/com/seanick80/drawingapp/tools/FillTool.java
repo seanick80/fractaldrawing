@@ -25,7 +25,7 @@ public class FillTool implements Tool {
     public JPanel createSettingsPanel(ToolSettingsContext ctx) {
         return ToolSettingsBuilder.createFillOptionsPanel(
                 ctx.getFillRegistry(), ctx.getGradientToolbar(), false,
-                null, this::setFillProvider);
+                fillProvider, null, this::setFillProvider);
     }
 
     @Override
