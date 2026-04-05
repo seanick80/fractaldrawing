@@ -183,6 +183,12 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         if (activeTool != null && imgX >= 0 && imgX < layerImg.getWidth()
                 && imgY >= 0 && imgY < layerImg.getHeight()) {
             if (layerManager.getActiveLayer().isLocked()) return;
+            if (!layerManager.getActiveLayer().isVisible()) {
+                javax.swing.JOptionPane.showMessageDialog(this,
+                        "The active layer is hidden. Make it visible to draw on it.",
+                        "Hidden Layer", javax.swing.JOptionPane.WARNING_MESSAGE);
+                return;
+            }
             lastMouseButton = e.getButton();
             saveUndoState();
             drawing = true;

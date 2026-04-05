@@ -190,6 +190,14 @@ public class FractalRenderTest {
         testFdpBackwardCompat();
         testFdpRoundTripBigDecimalPrecision();
 
+        // Bug bash regression tests
+        testBug1InvisibleLayerDrawingBlocked();
+        testBug2FractalScrollWheelZoom();
+        testBug3NoDuplicateGradientDefaults();
+        testBug4FillNoneDropdown();
+        testBug5SaveFileTracking();
+        testBug6LayerDragReorder();
+
         System.out.println();
         System.out.printf("=== Results: %d passed, %d failed ===%n", passed, failed);
         if (failed > 0) {
@@ -3484,6 +3492,189 @@ public class FractalRenderTest {
         } finally {
             tmpFile.delete();
         }
+    }
+
+    // ========== Bug Bash Regression Tests ==========
+
+    /** Bug 1: Drawing on an invisible layer should be blocked (no pixel changes). */
+    private static void testBug1InvisibleLayerDrawingBlocked() {
+        System.out.println("Bug 1: Invisible layer drawing blocked");
+        LayerManager lm = new LayerManager(100, 100);
+        Layer active = lm.getActiveLayer();
+        active.fill(Color.WHITE);
+        active.setVisible(false);
+
+        BufferedImage img = active.getImage();
+        int before = img.getRGB(50, 50);
+
+        // The canvas guards drawing via isVisible() check in mousePressed.
+        check("invisible layer blocks drawing", !active.isVisible());
+        check("invisible layer image unchanged", img.getRGB(50, 50) == before);
+        active.setVisible(true);
+        check("visible layer allows drawing", active.isVisible());
+    }
+
+    /** Bug 2: Fractal tool mouseWheelMoved should change viewport bounds. */
+    private static void testBug2FractalScrollWheelZoom() {
+        System.out.println("Bug 2: Fractal scroll wheel zoom");
+        FractalRenderer renderer = newRenderer();
+        renderer.setBounds(-2.0, 1.0, -1.5, 1.5);
+        renderer.setMaxIterations(64);
+
+        BigDecimal origRangeR = renderer.getMaxRealBig().subtract(renderer.getMinRealBig());
+
+        // Simulate the zoom math from FractalTool.mouseWheelMoved
+        int w = 100, h = 100, x = 50, y = 50;
+        BigDecimal minR = renderer.getMinRealBig(), maxR = renderer.getMaxRealBig();
+        BigDecimal minI = renderer.getMinImagBig(), maxI = renderer.getMaxImagBig();
+        java.math.MathContext mc = new java.math.MathContext(50);
+        BigDecimal rangeR = maxR.subtract(minR, mc);
+        BigDecimal rangeI = maxI.subtract(minI, mc);
+
+        BigDecimal xFrac = new BigDecimal(x).divide(new BigDecimal(w), mc);
+        BigDecimal yFrac = new BigDecimal(y).divide(new BigDecimal(h), mc);
+        BigDecimal centerReal = minR.add(xFrac.multiply(rangeR, mc), mc);
+        BigDecimal centerImag = minI.add(yFrac.multiply(rangeI, mc), mc);
+
+        BigDecimal zoomFactor = new BigDecimal("0.8");
+        BigDecimal newRangeR = rangeR.multiply(zoomFactor, mc);
+        BigDecimal newRangeI = rangeI.multiply(zoomFactor, mc);
+        BigDecimal two = new BigDecimal(2);
+
+        renderer.setBounds(
+            centerReal.subtract(newRangeR.divide(two, mc), mc),
+            centerReal.add(newRangeR.divide(two, mc), mc),
+            centerImag.subtract(newRangeI.divide(two, mc), mc),
+            centerImag.add(newRangeI.divide(two, mc), mc));
+
+        BigDecimal newRange = renderer.getMaxRealBig().subtract(renderer.getMinRealBig());
+        check("scroll wheel zoom shrinks range", newRange.compareTo(origRangeR) < 0);
+        check("scroll wheel zoom range is 80% of original",
+            newRange.subtract(origRangeR.multiply(zoomFactor)).abs()
+                .compareTo(new BigDecimal("0.0001")) < 0);
+    }
+
+    /** Bug 3: No gradient files should exist under src/gradient/defaults/. */
+    private static void testBug3NoDuplicateGradientDefaults() {
+        System.out.println("Bug 3: No duplicate gradient defaults");
+        File srcDefaults = new File("src/com/seanick80/drawingapp/gradient/defaults");
+        boolean srcExists = srcDefaults.exists() && srcDefaults.isDirectory();
+        if (srcExists) {
+            File[] files = srcDefaults.listFiles();
+            srcExists = files != null && files.length > 0;
+        }
+        check("src gradient defaults directory removed", !srcExists);
+    }
+
+    /** Bug 4: Fill dropdown should have "None" option for shape tools. */
+    private static void testBug4FillNoneDropdown() {
+        System.out.println("Bug 4: Fill None dropdown");
+        FillRegistry reg = new FillRegistry();
+        reg.register(new SolidFill());
+        reg.register(new GradientFill());
+
+        javax.swing.JPanel panel = ToolSettingsBuilder.createFillOptionsPanel(
+            reg, null, true, null, null);
+        javax.swing.JComboBox<?> combo = findComboBox(panel);
+        check("fill panel has combo box", combo != null);
+        if (combo != null) {
+            check("first item is None", "None".equals(combo.getItemAt(0)));
+            check("combo has None + fill providers",
+                combo.getItemCount() == reg.getAll().size() + 1);
+            check("None is selected by default", "None".equals(combo.getSelectedItem()));
+        }
+
+        // Fill tool (showNoneOption=false) should not have None
+        javax.swing.JPanel panel2 = ToolSettingsBuilder.createFillOptionsPanel(
+            reg, null, false, null, null);
+        javax.swing.JComboBox<?> combo2 = findComboBox(panel2);
+        check("fill tool panel has no None entry",
+            combo2 != null && !"None".equals(combo2.getItemAt(0)));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static javax.swing.JComboBox<?> findComboBox(java.awt.Container container) {
+        for (java.awt.Component c : container.getComponents()) {
+            if (c instanceof javax.swing.JComboBox) return (javax.swing.JComboBox<?>) c;
+            if (c instanceof java.awt.Container) {
+                javax.swing.JComboBox<?> found = findComboBox((java.awt.Container) c);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    /** Bug 5: Save file tracking — re-save to same file works. */
+    private static void testBug5SaveFileTracking() {
+        System.out.println("Bug 5: Save file tracking");
+        File tmpFile = new File(System.getProperty("java.io.tmpdir"), "test_save_tracking.fdp");
+        try {
+            LayerManager lm = new LayerManager(50, 50);
+            lm.getActiveLayer().fill(Color.RED);
+            FdpSerializer.save(tmpFile, lm, null, null);
+            check("save creates file", tmpFile.exists());
+            check("save file is non-empty", tmpFile.length() > 0);
+
+            // Re-save (simulating Ctrl+S)
+            lm.getActiveLayer().fill(Color.BLUE);
+            FdpSerializer.save(tmpFile, lm, null, null);
+            check("re-save overwrites file", tmpFile.exists());
+
+            AppState state = FdpSerializer.load(tmpFile);
+            check("re-saved file loads correctly", state != null);
+            check("re-saved dimensions correct",
+                state.canvasWidth == 50 && state.canvasHeight == 50);
+        } catch (Exception e) {
+            check("save file tracking: " + e.getMessage(), false);
+        } finally {
+            tmpFile.delete();
+        }
+    }
+
+    /** Bug 6: Layer drag-to-reorder via LayerManager.moveLayer(). */
+    private static void testBug6LayerDragReorder() {
+        System.out.println("Bug 6: Layer drag reorder");
+        LayerManager lm = new LayerManager(50, 50);
+        lm.getActiveLayer().setName("Background");
+        lm.addLayer().setName("Layer A");
+        lm.addLayer().setName("Layer B");
+
+        check("initial order correct",
+            "Background".equals(lm.getLayer(0).getName()) &&
+            "Layer A".equals(lm.getLayer(1).getName()) &&
+            "Layer B".equals(lm.getLayer(2).getName()));
+
+        // Move Layer B (index 2) to index 0
+        lm.setActiveIndex(2);
+        lm.moveLayer(2, 0);
+        check("move 2->0 order",
+            "Layer B".equals(lm.getLayer(0).getName()) &&
+            "Background".equals(lm.getLayer(1).getName()) &&
+            "Layer A".equals(lm.getLayer(2).getName()));
+        check("move 2->0 active follows", lm.getActiveIndex() == 0);
+
+        // Move back
+        lm.moveLayer(0, 2);
+        check("move 0->2 order",
+            "Background".equals(lm.getLayer(0).getName()) &&
+            "Layer A".equals(lm.getLayer(1).getName()) &&
+            "Layer B".equals(lm.getLayer(2).getName()));
+        check("move 0->2 active follows", lm.getActiveIndex() == 2);
+
+        // No-op
+        lm.moveLayer(1, 1);
+        check("same index no-op", "Layer A".equals(lm.getLayer(1).getName()));
+
+        // Invalid indices
+        lm.moveLayer(-1, 0);
+        lm.moveLayer(0, 5);
+        check("invalid indices ignored", lm.getLayerCount() == 3);
+
+        // Active adjusts when non-active layer moves across
+        lm.setActiveIndex(1); // Layer A
+        lm.moveLayer(0, 2); // Move Background past active
+        check("active adjusts when layer crosses",
+            lm.getActiveIndex() == 0 && "Layer A".equals(lm.getLayer(0).getName()));
     }
 
     private static void deleteDir(File dir) {

@@ -90,6 +90,24 @@ public class LayerManager {
         fireChange();
     }
 
+    /** Move a layer from one index to another, shifting others as needed. */
+    public void moveLayer(int fromIndex, int toIndex) {
+        if (fromIndex == toIndex) return;
+        if (fromIndex < 0 || fromIndex >= layers.size()) return;
+        if (toIndex < 0 || toIndex >= layers.size()) return;
+        Layer layer = layers.remove(fromIndex);
+        layers.add(toIndex, layer);
+        // Update active index to follow the moved layer if it was active
+        if (activeIndex == fromIndex) {
+            activeIndex = toIndex;
+        } else if (fromIndex < activeIndex && toIndex >= activeIndex) {
+            activeIndex--;
+        } else if (fromIndex > activeIndex && toIndex <= activeIndex) {
+            activeIndex++;
+        }
+        fireChange();
+    }
+
     /** Merge the given layer down into the layer below it. */
     public void mergeDown(int index) {
         if (index <= 0) return;

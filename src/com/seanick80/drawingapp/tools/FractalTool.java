@@ -180,7 +180,35 @@ public class FractalTool implements Tool {
 
     @Override
     public void mouseWheelMoved(BufferedImage image, int x, int y, int wheelRotation, DrawingCanvas canvas) {
-        // Ctrl+scroll = fractal zoom, plain scroll = image zoom (handled by canvas)
+        // Ctrl+scroll = fractal zoom centered on cursor position
+        renderController.setLastImage(image);
+        renderController.setLastCanvas(canvas);
+        int w = image.getWidth(), h = image.getHeight();
+
+        BigDecimal minR = renderer.getMinRealBig(), maxR = renderer.getMaxRealBig();
+        BigDecimal minI = renderer.getMinImagBig(), maxI = renderer.getMaxImagBig();
+        MathContext mc = FractalAnimationController.getZoomMathContext(minR, maxR, minI, maxI);
+        BigDecimal rangeR = maxR.subtract(minR, mc);
+        BigDecimal rangeI = maxI.subtract(minI, mc);
+
+        BigDecimal xFrac = new BigDecimal(x).divide(new BigDecimal(w), mc);
+        BigDecimal yFrac = new BigDecimal(y).divide(new BigDecimal(h), mc);
+        BigDecimal centerReal = minR.add(xFrac.multiply(rangeR, mc), mc);
+        BigDecimal centerImag = minI.add(yFrac.multiply(rangeI, mc), mc);
+
+        // Scroll up = zoom in, scroll down = zoom out
+        BigDecimal zoomFactor = (wheelRotation < 0) ? new BigDecimal("0.8") : new BigDecimal("1.25");
+        BigDecimal newRangeR = rangeR.multiply(zoomFactor, mc);
+        BigDecimal newRangeI = rangeI.multiply(zoomFactor, mc);
+        BigDecimal two = new BigDecimal(2);
+
+        renderer.setBounds(
+            centerReal.subtract(newRangeR.divide(two, mc), mc),
+            centerReal.add(newRangeR.divide(two, mc), mc),
+            centerImag.subtract(newRangeI.divide(two, mc), mc),
+            centerImag.add(newRangeI.divide(two, mc), mc));
+
+        renderController.renderAsync(image, canvas);
     }
 
     @Override

@@ -134,19 +134,19 @@ public class ToolSettingsBuilder {
     }
 
     /**
-     * Creates a fill options panel with checkbox, fill type combo, angle dial,
-     * and gradient preview.
+     * Creates a fill options panel with fill type combo (with optional "None" entry),
+     * angle dial, and gradient preview.
      *
      * @param fillRegistry      registry of available fill providers
      * @param gradientToolbar   the gradient toolbar (may be null)
-     * @param showFilledCheck   whether to show the "Filled" checkbox (false for FillTool)
-     * @param onFilledChanged   callback when filled checkbox changes (may be null)
+     * @param showNoneOption    whether to show a "None" entry at the top (true for shape tools)
+     * @param onFilledChanged   callback when filled state changes (may be null)
      * @param onFillChanged     callback when fill provider changes
      */
     public static JPanel createFillOptionsPanel(
             FillRegistry fillRegistry,
             GradientToolbar gradientToolbar,
-            boolean showFilledCheck,
+            boolean showNoneOption,
             Consumer<Boolean> onFilledChanged,
             Consumer<FillProvider> onFillChanged) {
 
@@ -160,13 +160,11 @@ public class ToolSettingsBuilder {
         panel.add(fillLabel);
         panel.add(Box.createVerticalStrut(2));
 
-        JCheckBox filledCheck = new JCheckBox("Filled");
-        filledCheck.setAlignmentX(Component.LEFT_ALIGNMENT);
-        if (showFilledCheck) {
-            panel.add(filledCheck);
-        }
-
+        final String NONE_ENTRY = "None";
         JComboBox<String> fillCombo = new JComboBox<>();
+        if (showNoneOption) {
+            fillCombo.addItem(NONE_ENTRY);
+        }
         for (FillProvider fp : fillRegistry.getAll()) {
             fillCombo.addItem(fp.getName());
         }
@@ -294,14 +292,16 @@ public class ToolSettingsBuilder {
         // Notify callback helper
         Runnable notifyChanges = () -> {
             String name = (String) fillCombo.getSelectedItem();
-            FillProvider fp = fillRegistry.getByName(name);
+            boolean isNone = NONE_ENTRY.equals(name);
+            FillProvider fp = isNone ? null : fillRegistry.getByName(name);
             if (onFillChanged != null) onFillChanged.accept(fp);
-            if (onFilledChanged != null) onFilledChanged.accept(filledCheck.isSelected());
+            if (onFilledChanged != null) onFilledChanged.accept(!isNone);
         };
 
         fillCombo.addActionListener(e -> {
             String name = (String) fillCombo.getSelectedItem();
-            FillProvider fp = fillRegistry.getByName(name);
+            boolean isNone = NONE_ENTRY.equals(name);
+            FillProvider fp = isNone ? null : fillRegistry.getByName(name);
             boolean isCustom = fp instanceof CustomGradientFill;
             boolean hasAngle = fp instanceof AngledFillProvider;
             gradientPreview.setVisible(isCustom && !hasGradToolbar);
@@ -313,16 +313,13 @@ public class ToolSettingsBuilder {
                 angleDial.repaint();
             }
             if (isCustom && gradientToolbar != null) {
-                FillProvider cfp = fillRegistry.getByName(name);
-                if (cfp instanceof CustomGradientFill cgf) {
+                if (fp instanceof CustomGradientFill cgf) {
                     gradientToolbar.setGradient(cgf.getGradient());
                     gradientToolbar.setChangeCallback(gradientPreview::repaint);
                 }
             }
             notifyChanges.run();
         });
-
-        filledCheck.addActionListener(e -> notifyChanges.run());
 
         panel.add(Box.createVerticalStrut(4));
         panel.add(gradientPreview);

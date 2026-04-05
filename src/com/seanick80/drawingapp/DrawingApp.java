@@ -36,6 +36,7 @@ public class DrawingApp extends JFrame {
     private final DockManager dockManager;
     private DockablePanel toolSettingsDockPanel;
     private JMenu activeToolMenu;
+    private File currentFile;
 
     public DrawingApp() {
         super("Drawing App");
@@ -148,9 +149,14 @@ public class DrawingApp extends JFrame {
         openItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_O, InputEvent.CTRL_DOWN_MASK));
         openItem.addActionListener(e -> openImage());
 
-        JMenuItem saveItem = new JMenuItem("Save As...");
+        JMenuItem saveItem = new JMenuItem("Save");
         saveItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK));
-        saveItem.addActionListener(e -> saveImage());
+        saveItem.addActionListener(e -> saveFile());
+
+        JMenuItem saveAsItem = new JMenuItem("Save As...");
+        saveAsItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S,
+                InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK));
+        saveAsItem.addActionListener(e -> saveImageAs());
 
         JMenuItem exitItem = new JMenuItem("Exit");
         exitItem.addActionListener(e -> System.exit(0));
@@ -158,6 +164,7 @@ public class DrawingApp extends JFrame {
         fileMenu.add(newItem);
         fileMenu.add(openItem);
         fileMenu.add(saveItem);
+        fileMenu.add(saveAsItem);
         fileMenu.addSeparator();
         fileMenu.add(exitItem);
 
@@ -259,6 +266,8 @@ public class DrawingApp extends JFrame {
             int w = Integer.parseInt(parts[0].trim());
             int h = Integer.parseInt(parts[1].trim());
             canvas.newImage(w, h);
+            currentFile = null;
+            updateTitle();
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Invalid size format. Use WxH (e.g. 800x600).");
         }
@@ -281,13 +290,41 @@ public class DrawingApp extends JFrame {
                         canvas.loadImage(img);
                     }
                 }
+                currentFile = file;
+                updateTitle();
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Failed to open: " + ex.getMessage());
             }
         }
     }
 
-    private void saveImage() {
+    /** Save to the current file, or fall back to Save As if no file is set. */
+    private void saveFile() {
+        if (currentFile == null) {
+            saveImageAs();
+            return;
+        }
+        try {
+            String name = currentFile.getName().toLowerCase();
+            if (name.endsWith(".fdp")) {
+                saveFdpProject(currentFile);
+            } else {
+                String format = "png";
+                if (name.endsWith(".jpg") || name.endsWith(".jpeg")) format = "jpg";
+                else if (name.endsWith(".bmp")) format = "bmp";
+                BufferedImage flat = canvas.getLayerManager().composite();
+                ImageIO.write(flat, format, currentFile);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Failed to save: " + ex.getMessage());
+        }
+    }
+
+    private void updateTitle() {
+        setTitle("Drawing App" + (currentFile != null ? " - " + currentFile.getName() : ""));
+    }
+
+    private void saveImageAs() {
         JFileChooser chooser = new JFileChooser();
         chooser.addChoosableFileFilter(new FileNameExtensionFilter("FDP Project (*.fdp)", "fdp"));
         chooser.addChoosableFileFilter(new FileNameExtensionFilter("PNG Image (*.png)", "png"));
@@ -308,6 +345,8 @@ public class DrawingApp extends JFrame {
                     BufferedImage flat = canvas.getLayerManager().composite();
                     ImageIO.write(flat, format, file);
                 }
+                currentFile = file;
+                updateTitle();
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Failed to save: " + ex.getMessage());
             }

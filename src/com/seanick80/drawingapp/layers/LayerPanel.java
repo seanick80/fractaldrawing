@@ -14,6 +14,7 @@ public class LayerPanel extends JPanel implements LayerManager.LayerChangeListen
 
     private static final int THUMB_W = 40;
     private static final int THUMB_H = 30;
+    private static final int DRAG_THRESHOLD = 5;
 
     private final LayerManager layerManager;
     private final JPanel layerListPanel;
@@ -21,6 +22,11 @@ public class LayerPanel extends JPanel implements LayerManager.LayerChangeListen
     private final JLabel opacityLabel;
     private final JComboBox<BlendMode> blendCombo;
     private final Runnable repaintCanvas;
+
+    // Drag-to-reorder state
+    private int dragSourceIndex = -1;
+    private int dragStartY = -1;
+    private boolean dragActive;
 
     public LayerPanel(LayerManager layerManager, Runnable repaintCanvas) {
         this.layerManager = layerManager;
@@ -204,7 +210,7 @@ public class LayerPanel extends JPanel implements LayerManager.LayerChangeListen
         nameLabel.setFont(nameLabel.getFont().deriveFont(10f));
         if (layer.isLocked()) nameLabel.setForeground(Color.GRAY);
 
-        // Click to select
+        // Click to select + drag to reorder
         int layerIndex = index;
         MouseAdapter selectAdapter = new MouseAdapter() {
             @Override
@@ -218,12 +224,44 @@ public class LayerPanel extends JPanel implements LayerManager.LayerChangeListen
                     }
                 } else {
                     layerManager.setActiveIndex(layerIndex);
+                    dragSourceIndex = layerIndex;
+                    dragStartY = e.getYOnScreen();
+                    dragActive = false;
                 }
+            }
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (dragSourceIndex < 0) return;
+                int dy = Math.abs(e.getYOnScreen() - dragStartY);
+                if (!dragActive && dy > DRAG_THRESHOLD) {
+                    dragActive = true;
+                    row.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                }
+                if (dragActive) {
+                    // Find which row we're over by screen position
+                    Point screenPoint = e.getLocationOnScreen();
+                    int targetIndex = findLayerIndexAtScreen(screenPoint);
+                    if (targetIndex >= 0 && targetIndex != dragSourceIndex) {
+                        layerManager.moveLayer(dragSourceIndex, targetIndex);
+                        dragSourceIndex = targetIndex;
+                    }
+                }
+            }
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                if (dragActive) {
+                    row.setCursor(Cursor.getDefaultCursor());
+                }
+                dragSourceIndex = -1;
+                dragActive = false;
             }
         };
         row.addMouseListener(selectAdapter);
+        row.addMouseMotionListener(selectAdapter);
         nameLabel.addMouseListener(selectAdapter);
+        nameLabel.addMouseMotionListener(selectAdapter);
         thumbLabel.addMouseListener(selectAdapter);
+        thumbLabel.addMouseMotionListener(selectAdapter);
 
         JPanel leftPart = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
         leftPart.setOpaque(false);
@@ -246,6 +284,24 @@ public class LayerPanel extends JPanel implements LayerManager.LayerChangeListen
         row.add(lockBox, BorderLayout.EAST);
 
         return row;
+    }
+
+    /**
+     * Determine which layer index a screen-coordinate point corresponds to,
+     * based on the row positions in the layer list panel.
+     * Rows are displayed top-down with highest index first.
+     */
+    private int findLayerIndexAtScreen(Point screenPoint) {
+        int rowCount = layerListPanel.getComponentCount();
+        for (int i = 0; i < rowCount; i++) {
+            Component row = layerListPanel.getComponent(i);
+            Point rowScreen = row.getLocationOnScreen();
+            if (screenPoint.y >= rowScreen.y && screenPoint.y < rowScreen.y + row.getHeight()) {
+                // Rows are displayed in reverse order: component 0 = highest layer index
+                return layerManager.getLayerCount() - 1 - i;
+            }
+        }
+        return -1;
     }
 
     private static JButton smallButton(String text, String tooltip) {
