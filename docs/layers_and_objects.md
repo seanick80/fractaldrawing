@@ -1,4 +1,6 @@
-# Proposal: Layer System & Object Model
+# Proposal: Layer System & Object Model (Historical)
+
+> **Status**: Phase 1 (layers, compositing, blend modes, layer panel) is fully implemented. Option B was chosen. Phases 2-4 (object records, selection tool, operation-based undo) remain as future work — see `future_work.md`.
 
 ## Problem
 

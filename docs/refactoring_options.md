@@ -1,4 +1,6 @@
-# Refactoring Options: Drawing App
+# Refactoring Options: Drawing App (Historical)
+
+> **Status**: All three proposals have been implemented. This document is kept as an architectural decision record.
 
 ## What We Should Have Done First
 
