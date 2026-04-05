@@ -2,16 +2,20 @@
 # Build and optionally run the Drawing App
 set -e
 
+# Convert /c/path to C:/path for Java on Windows
+winpath() { echo "$1" | sed 's|^/\([a-zA-Z]\)/|\1:/|'; }
+
 BASEDIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$BASEDIR/src"
-OUT="$BASEDIR/out"
+OUT="$(winpath "$BASEDIR/out")"
 LIB="$BASEDIR/lib"
 
 # Build classpath from all JARs in lib/
 CP=""
 for jar in "$LIB"/*.jar; do
     [ -f "$jar" ] || continue
-    if [ -n "$CP" ]; then CP="$CP;$jar"; else CP="$jar"; fi
+    jar_win="$(winpath "$jar")"
+    if [ -n "$CP" ]; then CP="$CP;$jar_win"; else CP="$jar_win"; fi
 done
 
 mkdir -p "$OUT"
@@ -29,6 +33,6 @@ echo "Build successful."
 if [ "$1" = "run" ]; then
     echo "Starting Drawing App..."
     java -cp "$OUT;$CP" com.seanick80.drawingapp.DrawingApp \
-        --gradient-dir "$BASEDIR/data/gradients" \
-        --location-dir "$BASEDIR/data/locations"
+        --gradient-dir "$(winpath "$BASEDIR/data/gradients")" \
+        --location-dir "$(winpath "$BASEDIR/data/locations")"
 fi
