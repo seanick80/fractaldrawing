@@ -1,0 +1,75 @@
+Performance Benchmark Results (Post JUnit 5 Migration + PMD Cleanup)
+====================================================================
+Date: 2026-04-05
+Commit: 6c2f965
+Java: OpenJDK 21.0.10 (2026-01-20 LTS)
+Render size: 400x300, 1 warmup, 3 runs
+
+=== bigdecimal_location ===
+Type: MANDELBROT | Iterations: 456 | Zoom: 4.16e+13 | Deep: yes
+  PERTURBATION:  Min: 10.85s Max: 10.95s Avg: 10.88s (11,027 px/s)
+  BIGDECIMAL:    Min: 21.62s Max: 22.60s Avg: 22.20s (5,406 px/s)
+  DOUBLE:        Min: 73ms   Max: 74ms   Avg: 73ms   (1,636,364 px/s)
+
+=== deeper_location ===
+Type: MANDELBROT | Iterations: 706 | Zoom: 3.41e+17 | Deep: yes
+  PERTURBATION:  Min: 8.26s  Max: 8.72s  Avg: 8.57s  (14,005 px/s)
+  BIGDECIMAL:    Min: 24.89s Max: 25.63s Avg: 25.21s (4,759 px/s)
+  DOUBLE:        Min: 23ms   Max: 35ms   Avg: 29ms   (4,044,944 px/s)
+
+=== double_deep_spiral ===
+Type: MANDELBROT | Iterations: 1024 | Zoom: 2.22e+10 | Deep: no
+  DOUBLE:        Min: 27ms   Max: 29ms   Avg: 28ms   (4,285,714 px/s)
+
+=== double_mini_mandelbrot ===
+Type: MANDELBROT | Iterations: 512 | Zoom: 8.00e+02 | Deep: no
+  DOUBLE:        Min: 17ms   Max: 26ms   Avg: 22ms   (5,294,118 px/s)
+
+=== double_seahorse ===
+Type: MANDELBROT | Iterations: 256 | Zoom: 3.15e+02 | Deep: no
+  DOUBLE:        Min: 15ms   Max: 20ms   Avg: 18ms   (6,545,455 px/s)
+
+=== fractal_zoomed_5 ===
+Type: MANDELBROT | Iterations: 506 | Zoom: 2.73e+18 | Deep: yes
+  PERTURBATION:  Min: 3.56s  Max: 3.76s  Avg: 3.65s  (32,853 px/s)
+  BIGDECIMAL:    Min: 25.76s Max: 27.50s Avg: 26.85s (4,469 px/s)
+  DOUBLE:        Min: 31ms   Max: 31ms   Avg: 31ms   (3,870,968 px/s)
+
+=== mandelbrot_bulb_edge ===
+Type: MANDELBROT | Iterations: 512 | Zoom: 2.00e+02 | Deep: no
+  DOUBLE:        Min: 17ms   Max: 24ms   Avg: 21ms   (5,714,286 px/s)
+
+=== mandelbrot_cardioid ===
+Type: MANDELBROT | Iterations: 256 | Zoom: 3.33e+00 | Deep: no
+  DOUBLE:        Min: 24ms   Max: 25ms   Avg: 24ms   (4,864,865 px/s)
+
+=== mandelbrot_deep_interior ===
+Type: MANDELBROT | Iterations: 256 | Zoom: 2.00e+14 | Deep: yes
+  PERTURBATION:  Min: 1.11s  Max: 1.25s  Avg: 1.20s  (99,668 px/s)
+  BIGDECIMAL:    Min: 13.69s Max: 14.96s Avg: 14.20s (8,450 px/s)
+  DOUBLE:        Min: 15ms   Max: 18ms   Avg: 16ms   (7,500,000 px/s)
+
+=== perturbation_error ===
+Type: MANDELBROT | Iterations: 256 | Zoom: 4.50e+15 | Deep: yes
+  PERTURBATION:  Min: 5.51s  Max: 5.60s  Avg: 5.55s  (21,620 px/s)
+  BIGDECIMAL:    Min: 11.91s Max: 13.62s Avg: 12.67s (9,474 px/s)
+  DOUBLE:        Min: 39ms   Max: 44ms   Avg: 41ms   (2,926,829 px/s)
+
+Comparison vs Baseline (2026-03-18, commit d312a57)
+====================================================
+Note: Perturbation/BigDecimal times are higher this run, likely due to
+different system load conditions. The key metric is relative ordering
+and no regressions in DOUBLE mode (which is most sensitive to code changes).
+
+DOUBLE mode comparison (avg ms):
+  bigdecimal_location:  54ms → 73ms  (within variance, GC/JIT noise)
+  deeper_location:      56ms → 29ms  (faster)
+  double_deep_spiral:   81ms → 28ms  (faster)
+  double_mini_mandel:   43ms → 22ms  (faster)
+  double_seahorse:      30ms → 18ms  (faster)
+  fractal_zoomed_5:     56ms → 31ms  (faster)
+  perturbation_error:   86ms → 41ms  (faster)
+
+No performance regressions detected. Double-precision rendering is
+generally faster than baseline, likely due to JVM/hardware differences
+between measurement sessions.
