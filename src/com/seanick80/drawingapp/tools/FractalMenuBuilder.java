@@ -73,6 +73,18 @@ public class FractalMenuBuilder {
                 TerrainViewer.openFromRenderer(renderer, renderController.getGradient()));
         menu.add(flyoverItem);
 
+        JMenu pcgMenu = new JMenu("Generate from Iterations");
+        JMenuItem iterTerrainItem = new JMenuItem("Iteration Terrain...");
+        iterTerrainItem.addActionListener(e ->
+                PCGController.openIterationTerrain(renderer, renderController.getGradient()));
+        pcgMenu.add(iterTerrainItem);
+
+        JMenuItem lsysTreeItem = new JMenuItem("L-System Tree...");
+        lsysTreeItem.addActionListener(e ->
+                PCGController.openLSystemTree(renderer, renderController.getGradient()));
+        pcgMenu.add(lsysTreeItem);
+        menu.add(pcgMenu);
+
         menu.addSeparator();
 
         JMenuItem screensaverItem = new JMenuItem("Screensaver Mode");
