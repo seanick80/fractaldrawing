@@ -36,16 +36,21 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         add(toolLabel);
         add(Box.createVerticalStrut(4));
 
-        JPanel buttonPanel = new JPanel(new GridLayout(4, 2, 2, 2));
+        JPanel buttonPanel = new JPanel(new GridLayout(7, 2, 2, 2));
         buttonPanel.setAlignmentX(LEFT_ALIGNMENT);
-        buttonPanel.setMaximumSize(new Dimension(140, 130));
+        buttonPanel.setMaximumSize(new Dimension(140, 220));
 
+        addTool(buttonPanel, new SelectionTool(), false);
         addTool(buttonPanel, new PencilTool(), true);
+        addTool(buttonPanel, new PaintbrushTool(), false);
         addTool(buttonPanel, new LineTool(), false);
         addTool(buttonPanel, new RectangleTool(), false);
         addTool(buttonPanel, new OvalTool(), false);
         addTool(buttonPanel, new EraserTool(), false);
         addTool(buttonPanel, new FillTool(), false);
+        addTool(buttonPanel, new EyedropperTool(), false);
+        addTool(buttonPanel, new MagicWandTool(), false);
+        addTool(buttonPanel, new LassoTool(), false);
         FractalTool fractalTool = new FractalTool();
         fractalTool.setGradientToolbar(gradientToolbar);
         addTool(buttonPanel, fractalTool, false);

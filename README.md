@@ -8,6 +8,10 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 
 ### Drawing Tools
 - **Pencil, Line, Rectangle, Oval, Eraser, Flood Fill** with configurable stroke size
+- **Paintbrush**: Soft radial brush with configurable opacity, hardness, shape (Round/Square/Diamond), and texture (Smooth/Speckle/Chalk/Scatter)
+- **Selection tools**: Rectangle select, Magic Wand (flood-fill tolerance), Lasso (freehand) — all with marching ants, drag-to-move, and floating content
+- **Eyedropper**: Left-click samples foreground color, right-click samples background — from flattened composite
+- **Edit menu**: Cut (Ctrl+X), Copy (Ctrl+C), Paste (Ctrl+V), Select All (Ctrl+A), Deselect (Ctrl+D), Save Selection to Image (PNG with transparency)
 - **Stroke styles**: Solid, Dashed, Dotted, Dash-Dot, Rough/Sketchy — on all shape and line tools
 - **Color picker**: 20-color palette + custom color chooser, foreground/background colors
 - **Pluggable fill system**: Solid, Gradient, Custom Gradient, Checkerboard, Diagonal Stripes, Crosshatch, Dot Grid, Horizontal Stripes, Noise
@@ -85,7 +89,7 @@ java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.DrawingApp 
 
 ## Testing
 
-202 tests across 26 JUnit 5 test classes, organized by size with tag-based filtering.
+223 tests across 33 JUnit 5 test classes, organized by size with tag-based filtering.
 
 ```bash
 # Run all JUnit tests
@@ -119,7 +123,8 @@ Tests cover:
 - AVI writer: RIFF header, frame count
 - Undo manager: basic ops, compaction, multi-layer support
 - Dock system: docking, undocking, edge placement, hide/show
-- Drawing tools: pencil, line, rectangle (outline + filled), oval, eraser, flood fill
+- Drawing tools: pencil, line, rectangle (outline + filled), oval, eraser, flood fill, paintbrush, eyedropper
+- Selection tools: rectangle select, magic wand, lasso — selection creation, copy, cut, move, commit
 - Tool capabilities: hasStrokeSize, hasFill, default sizes, names
 
 ## Benchmarking
@@ -206,6 +211,11 @@ src/com/seanick80/drawingapp/
     ├── FractalSettingsPanel.java     # Fractal tool settings UI
     ├── FractalMenuBuilder.java       # Fractal menu construction
     ├── FractalAnimationController.java # Animation orchestration
+    ├── SelectionTool.java           # Rectangle select with move, marching ants
+    ├── MagicWandTool.java           # Flood-fill tolerance selection with bitmap mask
+    ├── LassoTool.java               # Freehand lasso selection
+    ├── PaintbrushTool.java          # Soft radial brush with shape/texture options
+    ├── EyedropperTool.java          # Color sampler from composite image
     └── ...                      # Pencil, Line, Rectangle, Oval, Eraser, Fill
 ```
 

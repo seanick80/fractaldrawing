@@ -51,6 +51,9 @@ public interface Tool {
      */
     default JPanel createSettingsPanel(ToolSettingsContext ctx) { return null; }
 
+    /** Whether this tool needs its preview drawn even when not actively drawing. */
+    default boolean needsPersistentPreview() { return false; }
+
     /**
      * Returns a callback to invoke when the gradient changes, or null if this tool
      * doesn't respond to gradient changes. Used to wire the gradient toolbar.

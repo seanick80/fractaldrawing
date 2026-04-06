@@ -193,8 +193,91 @@ public class DrawingApp extends JFrame {
             canvas.clearCanvas();
         });
 
+        JMenuItem cutItem = new JMenuItem("Cut");
+        cutItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_X, InputEvent.CTRL_DOWN_MASK));
+        cutItem.addActionListener(e -> {
+            BufferedImage copied = getActiveSelectionCopy();
+            if (copied != null) {
+                canvas.saveUndoState();
+                copyToClipboard(copied);
+                SelectionTool sel = getSelectionTool();
+                if (sel != null && sel.hasSelection()) sel.cutSelection(canvas.getActiveLayerImage());
+                MagicWandTool wand = getMagicWandTool();
+                if (wand != null && wand.hasSelection()) wand.cutSelection(canvas.getActiveLayerImage());
+                LassoTool lasso = getLassoTool();
+                if (lasso != null && lasso.hasSelection()) lasso.cutSelection(canvas.getActiveLayerImage());
+                canvas.repaint();
+            }
+        });
+
+        JMenuItem copyItem = new JMenuItem("Copy");
+        copyItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_C, InputEvent.CTRL_DOWN_MASK));
+        copyItem.addActionListener(e -> {
+            BufferedImage copied = getActiveSelectionCopy();
+            if (copied != null) {
+                copyToClipboard(copied);
+            }
+        });
+
+        JMenuItem pasteItem = new JMenuItem("Paste");
+        pasteItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK));
+        pasteItem.addActionListener(e -> {
+            java.awt.image.BufferedImage img = pasteFromClipboard();
+            if (img != null) {
+                canvas.saveUndoState();
+                SelectionTool sel = getSelectionTool();
+                if (sel != null) {
+                    sel.commitSelection(canvas.getActiveLayerImage());
+                    sel.pasteContent(img);
+                    canvas.repaint();
+                }
+            }
+        });
+
+        JMenuItem selectAllItem = new JMenuItem("Select All");
+        selectAllItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK));
+        selectAllItem.addActionListener(e -> {
+            SelectionTool sel = getSelectionTool();
+            if (sel != null) {
+                sel.selectAll(canvas.getActiveLayerImage());
+                canvas.repaint();
+            }
+        });
+
+        JMenuItem deselectItem = new JMenuItem("Deselect");
+        deselectItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_D, InputEvent.CTRL_DOWN_MASK));
+        deselectItem.addActionListener(e -> {
+            SelectionTool sel = getSelectionTool();
+            if (sel != null) {
+                sel.commitSelection(canvas.getActiveLayerImage());
+                sel.clearSelection();
+            }
+            MagicWandTool wand = getMagicWandTool();
+            if (wand != null) {
+                wand.commitFloating(canvas.getActiveLayerImage());
+                wand.clearSelection();
+            }
+            LassoTool lasso = getLassoTool();
+            if (lasso != null) {
+                lasso.commitFloating(canvas.getActiveLayerImage());
+                lasso.clearSelection();
+            }
+            canvas.repaint();
+        });
+
         editMenu.add(undoItem);
         editMenu.add(redoItem);
+        editMenu.addSeparator();
+        editMenu.add(cutItem);
+        editMenu.add(copyItem);
+        editMenu.add(pasteItem);
+        editMenu.addSeparator();
+        JMenuItem saveSelectionItem = new JMenuItem("Save Selection to Image...");
+        saveSelectionItem.addActionListener(e -> saveSelectionToImage());
+
+        editMenu.add(selectAllItem);
+        editMenu.add(deselectItem);
+        editMenu.add(saveSelectionItem);
         editMenu.addSeparator();
         editMenu.add(clearItem);
 
@@ -241,6 +324,70 @@ public class DrawingApp extends JFrame {
         }
     }
 
+    private SelectionTool getSelectionTool() {
+        Tool t = toolBar.getTool("Select");
+        return (t instanceof SelectionTool) ? (SelectionTool) t : null;
+    }
+
+    private MagicWandTool getMagicWandTool() {
+        Tool t = toolBar.getTool("Magic Wand");
+        return (t instanceof MagicWandTool) ? (MagicWandTool) t : null;
+    }
+
+    private LassoTool getLassoTool() {
+        Tool t = toolBar.getTool("Lasso");
+        return (t instanceof LassoTool) ? (LassoTool) t : null;
+    }
+
+    /** Returns a copied selection image from whichever selection tool is active, or null. */
+    private BufferedImage getActiveSelectionCopy() {
+        SelectionTool sel = getSelectionTool();
+        if (sel != null && sel.hasSelection()) return sel.copySelection(canvas.getActiveLayerImage());
+        MagicWandTool wand = getMagicWandTool();
+        if (wand != null && wand.hasSelection()) return wand.copySelection(canvas.getActiveLayerImage());
+        LassoTool lasso = getLassoTool();
+        if (lasso != null && lasso.hasSelection()) return lasso.copySelection(canvas.getActiveLayerImage());
+        return null;
+    }
+
+    private void copyToClipboard(java.awt.image.BufferedImage img) {
+        java.awt.datatransfer.Transferable transferable = new java.awt.datatransfer.Transferable() {
+            @Override
+            public java.awt.datatransfer.DataFlavor[] getTransferDataFlavors() {
+                return new java.awt.datatransfer.DataFlavor[] { java.awt.datatransfer.DataFlavor.imageFlavor };
+            }
+            @Override
+            public boolean isDataFlavorSupported(java.awt.datatransfer.DataFlavor flavor) {
+                return java.awt.datatransfer.DataFlavor.imageFlavor.equals(flavor);
+            }
+            @Override
+            public Object getTransferData(java.awt.datatransfer.DataFlavor flavor) {
+                return img;
+            }
+        };
+        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(transferable, null);
+    }
+
+    private java.awt.image.BufferedImage pasteFromClipboard() {
+        try {
+            java.awt.datatransfer.Transferable t = Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null);
+            if (t != null && t.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.imageFlavor)) {
+                java.awt.Image img = (java.awt.Image) t.getTransferData(java.awt.datatransfer.DataFlavor.imageFlavor);
+                if (img instanceof java.awt.image.BufferedImage) {
+                    return (java.awt.image.BufferedImage) img;
+                }
+                // Convert to BufferedImage
+                java.awt.image.BufferedImage bimg = new java.awt.image.BufferedImage(
+                        img.getWidth(null), img.getHeight(null), java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g = bimg.createGraphics();
+                g.drawImage(img, 0, 0, null);
+                g.dispose();
+                return bimg;
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
     private void onToolChanged(Tool oldTool, Tool newTool) {
         JMenuBar menuBar = getJMenuBar();
         if (activeToolMenu != null) {
@@ -257,6 +404,28 @@ public class DrawingApp extends JFrame {
         // Resize floating tool settings dialog if content changed
         if (toolSettingsDockPanel != null) {
             toolSettingsDockPanel.repackIfFloating();
+        }
+    }
+
+    private void saveSelectionToImage() {
+        BufferedImage sel = getActiveSelectionCopy();
+        if (sel == null) {
+            JOptionPane.showMessageDialog(this, "No active selection.", "Save Selection", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileFilter(new FileNameExtensionFilter("PNG Image (transparency)", "png"));
+        chooser.setSelectedFile(new File("selection.png"));
+        if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File file = chooser.getSelectedFile();
+            if (!file.getName().toLowerCase().endsWith(".png")) {
+                file = new File(file.getAbsolutePath() + ".png");
+            }
+            try {
+                ImageIO.write(sel, "PNG", file);
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "Error saving: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 

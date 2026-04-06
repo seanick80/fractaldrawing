@@ -166,7 +166,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         } else {
             g2.drawImage(image, 0, 0, null);
         }
-        if (activeTool != null && drawing) {
+        if (activeTool != null && (drawing || activeTool.needsPersistentPreview())) {
             activeTool.drawPreview(g2);
         }
     }

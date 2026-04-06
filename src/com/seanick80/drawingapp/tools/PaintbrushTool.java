@@ -1,0 +1,231 @@
+package com.seanick80.drawingapp.tools;
+
+import com.seanick80.drawingapp.DrawingCanvas;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.image.BufferedImage;
+
+public class PaintbrushTool implements Tool {
+
+    enum BrushShape { ROUND, SQUARE, DIAMOND }
+    enum BrushTexture { SMOOTH, SPECKLE, CHALK, SCATTER }
+
+    private int lastX, lastY;
+    private int strokeSize = 12;
+    private float opacity = 1.0f;
+    private float hardness = 0.7f;
+    private BrushShape brushShape = BrushShape.ROUND;
+    private BrushTexture brushTexture = BrushTexture.SMOOTH;
+
+    @Override
+    public String getName() { return "Brush"; }
+
+    @Override
+    public boolean hasStrokeSize() { return true; }
+
+    @Override
+    public int getDefaultStrokeSize() { return 12; }
+
+    @Override
+    public void setStrokeSize(int size) { this.strokeSize = size; }
+
+    @Override
+    public void mousePressed(BufferedImage image, int x, int y, DrawingCanvas canvas) {
+        lastX = x;
+        lastY = y;
+        paintStamp(image, x, y, canvas.getForegroundColor());
+    }
+
+    @Override
+    public void mouseDragged(BufferedImage image, int x, int y, DrawingCanvas canvas) {
+        Color color = canvas.getForegroundColor();
+        int spacing = Math.max(1, strokeSize / 4);
+        int dx = x - lastX;
+        int dy = y - lastY;
+        double dist = Math.sqrt((double) dx * dx + (double) dy * dy);
+        int steps = (int) Math.ceil(dist / spacing);
+        for (int i = 1; i <= steps; i++) {
+            double t = (double) i / steps;
+            int ix = lastX + (int) Math.round(dx * t);
+            int iy = lastY + (int) Math.round(dy * t);
+            paintStamp(image, ix, iy, color);
+        }
+        lastX = x;
+        lastY = y;
+    }
+
+    @Override
+    public void mouseReleased(BufferedImage image, int x, int y, DrawingCanvas canvas) {}
+
+    @Override
+    public void drawPreview(Graphics2D g) {}
+
+    @Override
+    public JPanel createSettingsPanel(ToolSettingsContext ctx) {
+        JPanel sizePanel = ToolSettingsBuilder.createStrokeSizePanel(strokeSize, size -> {
+            this.strokeSize = size;
+        });
+
+        JPanel shapePanel = createComboPanel("Shape:", BrushShape.values(), brushShape,
+                val -> brushShape = (BrushShape) val);
+
+        JPanel texturePanel = createComboPanel("Texture:", BrushTexture.values(), brushTexture,
+                val -> brushTexture = (BrushTexture) val);
+
+        JPanel opacityPanel = createSliderPanel("Opacity", (int) (opacity * 100), value -> {
+            opacity = value / 100.0f;
+        });
+
+        JPanel hardnessPanel = createSliderPanel("Hardness", (int) (hardness * 100), value -> {
+            hardness = value / 100.0f;
+        });
+
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.add(sizePanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(shapePanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(texturePanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(opacityPanel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(hardnessPanel);
+        return panel;
+    }
+
+    private <E> JPanel createComboPanel(String labelText, E[] values, E selected,
+                                         java.util.function.Consumer<E> onChange) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel label = new JLabel(labelText);
+        label.setFont(label.getFont().deriveFont(Font.BOLD, 11f));
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JComboBox<E> combo = new JComboBox<>(values);
+        combo.setSelectedItem(selected);
+        combo.setMaximumSize(new Dimension(120, 28));
+        combo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        combo.addActionListener(e -> {
+            @SuppressWarnings("unchecked")
+            E val = (E) combo.getSelectedItem();
+            onChange.accept(val);
+        });
+
+        panel.add(label);
+        panel.add(Box.createVerticalStrut(2));
+        panel.add(combo);
+        return panel;
+    }
+
+    private JPanel createSliderPanel(String labelText, int initialValue, java.util.function.Consumer<Integer> onChange) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel label = new JLabel(labelText + ":");
+        label.setFont(label.getFont().deriveFont(Font.BOLD, 11f));
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JSlider slider = new JSlider(0, 100, initialValue);
+        slider.setFont(slider.getFont().deriveFont(10f));
+        slider.setMaximumSize(new Dimension(120, 28));
+        slider.setAlignmentX(Component.LEFT_ALIGNMENT);
+        slider.addChangeListener(e -> onChange.accept(slider.getValue()));
+
+        panel.add(label);
+        panel.add(Box.createVerticalStrut(2));
+        panel.add(slider);
+        return panel;
+    }
+
+    private float pixelHash(int x, int y) {
+        int h = (x * 374761393 + y * 668265263) ^ 0x85ebca6b;
+        h = ((h >> 13) ^ h) * 0x165667b1;
+        return (float) ((h & 0x7FFFFFFF) / (double) 0x7FFFFFFF);
+    }
+
+    void paintStamp(BufferedImage image, int cx, int cy, Color color) {
+        int radius = Math.max(1, strokeSize / 2);
+        int size = radius * 2;
+
+        BufferedImage stamp = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+
+        int r = color.getRed();
+        int g = color.getGreen();
+        int b = color.getBlue();
+
+        for (int py = 0; py < size; py++) {
+            for (int px = 0; px < size; px++) {
+                float ddx = px - radius + 0.5f;
+                float ddy = py - radius + 0.5f;
+
+                // Shape-based distance check
+                float dist;
+                switch (brushShape) {
+                    case SQUARE:
+                        dist = Math.max(Math.abs(ddx), Math.abs(ddy));
+                        break;
+                    case DIAMOND:
+                        dist = Math.abs(ddx) + Math.abs(ddy);
+                        // Scale diamond so it fits within the same radius
+                        dist *= 0.5f;
+                        break;
+                    default: // ROUND
+                        dist = (float) Math.sqrt(ddx * ddx + ddy * ddy);
+                        break;
+                }
+                if (dist > radius) continue;
+
+                float alpha;
+                float hardEdge = radius * hardness;
+                if (dist <= hardEdge) {
+                    alpha = opacity * 255f;
+                } else {
+                    float t = (dist - hardEdge) / (radius - hardEdge);
+                    alpha = opacity * 255f * (1.0f - t);
+                }
+
+                // Absolute pixel position for deterministic hash
+                int absPx = cx - radius + px;
+                int absPy = cy - radius + py;
+
+                // Apply texture
+                switch (brushTexture) {
+                    case SPECKLE:
+                        if (pixelHash(absPx, absPy) < 0.3f) alpha = 0;
+                        break;
+                    case CHALK:
+                        float noise = 0.3f + 0.7f * pixelHash(absPx, absPy);
+                        alpha *= noise;
+                        break;
+                    case SCATTER:
+                        int offX = (int) ((pixelHash(absPx, absPy) - 0.5f) * 4);
+                        int offY = (int) ((pixelHash(absPy, absPx) - 0.5f) * 4);
+                        int srcX = px + offX;
+                        int srcY = py + offY;
+                        if (srcX < 0 || srcX >= size || srcY < 0 || srcY >= size) {
+                            alpha = 0;
+                        }
+                        break;
+                    default: // SMOOTH
+                        break;
+                }
+
+                int a = Math.max(0, Math.min(255, (int) alpha));
+                if (a == 0) continue;
+                int argb = (a << 24) | (r << 16) | (g << 8) | b;
+                stamp.setRGB(px, py, argb);
+            }
+        }
+
+        Graphics2D g2 = image.createGraphics();
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER));
+        g2.drawImage(stamp, cx - radius, cy - radius, null);
+        g2.dispose();
+    }
+}
