@@ -3,6 +3,7 @@ package com.seanick80.drawingapp.tools;
 import com.seanick80.drawingapp.DrawingCanvas;
 import javax.swing.JPanel;
 import java.awt.*;
+import java.awt.AlphaComposite;
 import java.awt.image.BufferedImage;
 
 public class EraserTool implements Tool {
@@ -33,9 +34,8 @@ public class EraserTool implements Tool {
 
     @Override
     public void mouseDragged(BufferedImage image, int x, int y, DrawingCanvas canvas) {
-        // Draw a thick white line to avoid gaps
         Graphics2D g = image.createGraphics();
-        g.setColor(canvas.getBackgroundColor());
+        g.setComposite(AlphaComposite.Clear);
         g.setStroke(new BasicStroke(size, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         g.drawLine(lastX, lastY, x, y);
         g.dispose();
@@ -51,7 +51,7 @@ public class EraserTool implements Tool {
 
     private void erase(BufferedImage image, int x, int y, DrawingCanvas canvas) {
         Graphics2D g = image.createGraphics();
-        g.setColor(canvas.getBackgroundColor());
+        g.setComposite(AlphaComposite.Clear);
         g.fillRect(x - size / 2, y - size / 2, size, size);
         g.dispose();
     }

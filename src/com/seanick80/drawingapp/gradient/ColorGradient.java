@@ -137,9 +137,19 @@ public class ColorGradient {
 
     /** Generate an array of colors sampled evenly across the gradient. */
     public Color[] toColors(int count) {
+        return toColors(count, 0f);
+    }
+
+    /** Generate colors with a cyclic offset applied to the sampling position. */
+    public Color[] toColors(int count, float offset) {
         Color[] result = new Color[count];
         for (int i = 0; i < count; i++) {
-            result[i] = getColorAt((float) i / Math.max(1, count - 1));
+            float t = (float) i / Math.max(1, count - 1);
+            if (offset != 0f) {
+                t = t + offset;
+                t = t - (float) Math.floor(t);
+            }
+            result[i] = getColorAt(t);
         }
         return result;
     }

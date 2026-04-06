@@ -256,7 +256,12 @@ public class FractalRenderer {
      * @return a new BufferedImage colored from the iteration data
      */
     public BufferedImage recolorFromIters(int[] iters, int width, int height, ColorGradient gradient) {
-        FractalColorMapper mapper = buildColorMapper(gradient);
+        return recolorFromIters(iters, width, height, gradient, 0f);
+    }
+
+    public BufferedImage recolorFromIters(int[] iters, int width, int height,
+                                           ColorGradient gradient, float offset) {
+        FractalColorMapper mapper = new FractalColorMapper(gradient, maxIterations, colorMode, offset);
         int[] rgb = new int[width * height];
         for (int i = 0; i < rgb.length; i++) {
             rgb[i] = mapper.colorForIter(iters[i]);

@@ -3,6 +3,7 @@ package com.seanick80.drawingapp.tools;
 import com.seanick80.drawingapp.DrawingCanvas;
 import javax.swing.JPanel;
 import java.awt.*;
+import java.awt.geom.GeneralPath;
 import java.awt.image.BufferedImage;
 import java.util.Random;
 
@@ -11,6 +12,11 @@ public class PencilTool implements Tool {
     private int lastX, lastY;
     private int strokeSize = 2;
     private StrokeStyle strokeStyle = StrokeStyle.SOLID;
+
+    // For dashed strokes: accumulate path and draw all at once on release
+    private GeneralPath dashPath;
+    private Color dashColor;
+    private boolean dashActive;
 
     @Override public String getName() { return "Pencil"; }
     @Override public boolean hasStrokeSize() { return true; }
@@ -35,43 +41,76 @@ public class PencilTool implements Tool {
         return panel;
     }
 
+    private boolean usesDashPath() {
+        return strokeStyle != StrokeStyle.SOLID && strokeStyle != StrokeStyle.ROUGH;
+    }
+
     @Override
     public void mousePressed(BufferedImage image, int x, int y, DrawingCanvas canvas) {
         lastX = x;
         lastY = y;
-        Graphics2D g = image.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setColor(canvas.getForegroundColor());
-        if (strokeStyle == StrokeStyle.ROUGH) {
-            drawRoughSegment(g, x, y, x, y);
+        if (usesDashPath()) {
+            dashPath = new GeneralPath();
+            dashPath.moveTo(x, y);
+            dashColor = canvas.getForegroundColor();
+            dashActive = true;
         } else {
-            g.setStroke(strokeStyle.createStroke(strokeSize));
-            g.drawLine(x, y, x, y);
+            Graphics2D g = image.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(canvas.getForegroundColor());
+            if (strokeStyle == StrokeStyle.ROUGH) {
+                drawRoughSegment(g, x, y, x, y);
+            } else {
+                g.setStroke(strokeStyle.createStroke(strokeSize));
+                g.drawLine(x, y, x, y);
+            }
+            g.dispose();
         }
-        g.dispose();
     }
 
     @Override
     public void mouseDragged(BufferedImage image, int x, int y, DrawingCanvas canvas) {
-        Graphics2D g = image.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setColor(canvas.getForegroundColor());
-        if (strokeStyle == StrokeStyle.ROUGH) {
-            drawRoughSegment(g, lastX, lastY, x, y);
+        if (usesDashPath() && dashPath != null) {
+            dashPath.lineTo(x, y);
         } else {
-            g.setStroke(strokeStyle.createStroke(strokeSize));
-            g.drawLine(lastX, lastY, x, y);
+            Graphics2D g = image.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(canvas.getForegroundColor());
+            if (strokeStyle == StrokeStyle.ROUGH) {
+                drawRoughSegment(g, lastX, lastY, x, y);
+            } else {
+                g.setStroke(strokeStyle.createStroke(strokeSize));
+                g.drawLine(lastX, lastY, x, y);
+            }
+            g.dispose();
         }
-        g.dispose();
         lastX = x;
         lastY = y;
     }
 
     @Override
-    public void mouseReleased(BufferedImage image, int x, int y, DrawingCanvas canvas) {}
+    public void mouseReleased(BufferedImage image, int x, int y, DrawingCanvas canvas) {
+        if (usesDashPath() && dashPath != null) {
+            dashPath.lineTo(x, y);
+            Graphics2D g = image.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setColor(dashColor);
+            g.setStroke(strokeStyle.createStroke(strokeSize));
+            g.draw(dashPath);
+            g.dispose();
+            dashPath = null;
+            dashActive = false;
+        }
+    }
 
     @Override
-    public void drawPreview(Graphics2D g) {}
+    public void drawPreview(Graphics2D g) {
+        if (dashActive && dashPath != null) {
+            g.setColor(dashColor);
+            g.setStroke(strokeStyle.createStroke(strokeSize));
+            g.draw(dashPath);
+        }
+    }
 
     private void drawRoughSegment(Graphics2D g, int x1, int y1, int x2, int y2) {
         Random rng = new Random((long) x1 * 31 + y1 * 17 + x2 * 13 + y2);

@@ -22,6 +22,7 @@ public class GradientToolbar extends JPanel {
 
     // Palette cycle live preview
     private FractalRenderer paletteCycleRenderer;
+    private java.util.function.Consumer<java.awt.image.BufferedImage> paletteCycleFrameCallback;
     private volatile boolean paletteCycling;
     private Thread paletteCycleThread;
 
@@ -115,38 +116,52 @@ public class GradientToolbar extends JPanel {
         this.paletteCycleRenderer = renderer;
     }
 
+    /** Set callback to display each cycle animation frame on the canvas. */
+    public void setPaletteCycleFrameCallback(java.util.function.Consumer<java.awt.image.BufferedImage> callback) {
+        this.paletteCycleFrameCallback = callback;
+    }
+
     private void startPaletteCycle() {
         if (paletteCycleRenderer == null) return;
-        int[] iters = paletteCycleRenderer.getLastRenderIters();
-        int[] size = paletteCycleRenderer.getLastRenderSize();
-        if (iters == null || size[0] <= 0) return;
 
         stopPaletteCycle();
         paletteCycling = true;
 
-        int[] itersCopy = new int[iters.length];
-        System.arraycopy(iters, 0, itersCopy, 0, iters.length);
-        int w = size[0], h = size[1];
         ColorGradient baseGrad = getGradient();
 
         paletteCycleThread = new Thread(() -> {
+            // Wait for render iters to become available (initial render may still be running)
+            int[] itersCopy = null;
+            int w = 0, h = 0;
+            for (int attempt = 0; attempt < 300 && paletteCycling; attempt++) {
+                int[] iters = paletteCycleRenderer.getLastRenderIters();
+                int[] sz = paletteCycleRenderer.getLastRenderSize();
+                if (iters != null && sz[0] > 0) {
+                    itersCopy = new int[iters.length];
+                    System.arraycopy(iters, 0, itersCopy, 0, iters.length);
+                    w = sz[0]; h = sz[1];
+                    break;
+                }
+                try { Thread.sleep(100); } catch (InterruptedException e) { return; }
+            }
+            if (itersCopy == null) return;
+
             int frame = 0;
             int totalFrames = 120;
             float cycleSpeed = 1.0f;
             while (paletteCycling) {
-                float shift = (frame * cycleSpeed) / totalFrames;
+                float offset = (frame * cycleSpeed) / totalFrames;
                 frame = (frame + 1) % totalFrames;
-                ColorGradient shifted = PaletteCycleAnimator.shiftGradient(baseGrad, shift);
-                paletteCycleRenderer.recolorFromIters(itersCopy, w, h, shifted);
+                java.awt.image.BufferedImage recolored =
+                        paletteCycleRenderer.recolorFromIters(itersCopy, w, h, baseGrad, offset);
 
-                // Update the gradient editor preview to show shifted gradient
-                SwingUtilities.invokeLater(() -> editorPanel.repaint());
-
-                // Also update the canvas if a change callback is registered
-                if (changeCallback != null) {
-                    // Push the shifted gradient colors live
-                    SwingUtilities.invokeLater(changeCallback);
-                }
+                editorPanel.setPreviewOffset(offset);
+                SwingUtilities.invokeLater(() -> {
+                    editorPanel.repaint();
+                    if (paletteCycleFrameCallback != null) {
+                        paletteCycleFrameCallback.accept(recolored);
+                    }
+                });
 
                 try { Thread.sleep(33); } catch (InterruptedException e) { break; }
             }
@@ -161,6 +176,8 @@ public class GradientToolbar extends JPanel {
             paletteCycleThread.interrupt();
             paletteCycleThread = null;
         }
+        editorPanel.setPreviewOffset(0f);
+        editorPanel.repaint();
     }
 
     private JFileChooser createChooser() {

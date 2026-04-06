@@ -17,10 +17,15 @@ public final class FractalColorMapper {
 
     public FractalColorMapper(ColorGradient gradient, int maxIterations,
                               FractalRenderer.ColorMode colorMode) {
+        this(gradient, maxIterations, colorMode, 0f);
+    }
+
+    public FractalColorMapper(ColorGradient gradient, int maxIterations,
+                              FractalRenderer.ColorMode colorMode, float offset) {
         this.maxIterations = maxIterations;
         this.colorMode = colorMode;
         int size = (colorMode == FractalRenderer.ColorMode.MOD) ? 64 : maxIterations;
-        Color[] colors = gradient.toColors(size);
+        Color[] colors = gradient.toColors(size, offset);
         this.lut = new int[size];
         for (int i = 0; i < size; i++) lut[i] = colors[i].getRGB();
     }

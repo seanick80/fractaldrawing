@@ -23,6 +23,7 @@ public class GradientEditorPanel extends JPanel {
     private static final int HIT_RADIUS = 8;
 
     private ColorGradient gradient;
+    private float previewOffset; // cyclic offset for cycle animation preview
     private ColorGradient.Stop selectedStop;
     private int dragChannel = -1; // 0=R, 1=G, 2=B, -1=none
     private boolean dragging;
@@ -61,6 +62,9 @@ public class GradientEditorPanel extends JPanel {
 
     /** Set a callback that fires on every edit (drag, add, delete, color change). */
     public void setEditCallback(Runnable callback) { this.editCallback = callback; }
+
+    /** Set a cyclic offset for the preview bar (for cycle animation). 0 = no offset. */
+    public void setPreviewOffset(float offset) { this.previewOffset = offset; }
 
     private void fireEditCallback() {
         if (editCallback != null) editCallback.run();
@@ -278,6 +282,10 @@ public class GradientEditorPanel extends JPanel {
         int w = getWidth();
         for (int x = 0; x < w; x++) {
             float t = (float) x / Math.max(1, w - 1);
+            if (previewOffset != 0f) {
+                t = t + previewOffset;
+                t = t - (float) Math.floor(t);
+            }
             g.setColor(gradient.getColorAt(t));
             g.drawLine(x, getPreviewTop(), x, getPreviewBottom() - 1);
         }

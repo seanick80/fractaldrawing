@@ -94,8 +94,9 @@ class DrawingToolTest {
         EraserTool eraser = new EraserTool();
         eraser.setSize(20);
         eraser.mousePressed(img, 50, 50, canvas);
-        int pixel = img.getRGB(50, 50) & 0x00FFFFFF;
-        assertNotEquals(0xFF0000, pixel, "Eraser should erase (no longer red)");
+        int pixel = img.getRGB(50, 50);
+        int alpha = (pixel >> 24) & 0xFF;
+        assertEquals(0, alpha, "Eraser should clear to transparent (alpha=0)");
         assertEquals("Eraser", eraser.getName());
         assertEquals(18, eraser.getDefaultStrokeSize());
     }
@@ -133,6 +134,17 @@ class DrawingToolTest {
         pencil.mouseDragged(img, 45, 25, canvas);
         pencil.mouseReleased(img, 45, 25, canvas);
         assertFalse(TestHelpers.isAllColor(img, 0xFFFFFF), "Pencil dashed should draw");
+
+        // Verify dashed line has gaps (not all pixels along the path are colored)
+        boolean hasWhiteGap = false;
+        boolean hasColoredPixel = false;
+        for (int x = 5; x <= 45; x++) {
+            int rgb = img.getRGB(x, 25) & 0x00FFFFFF;
+            if (rgb == 0xFFFFFF) hasWhiteGap = true;
+            else hasColoredPixel = true;
+        }
+        assertTrue(hasColoredPixel, "Dashed pencil should draw colored pixels");
+        assertTrue(hasWhiteGap, "Dashed pencil should have gaps between dashes");
 
         // Rough style
         pencil.setStrokeStyle(StrokeStyle.ROUGH);
