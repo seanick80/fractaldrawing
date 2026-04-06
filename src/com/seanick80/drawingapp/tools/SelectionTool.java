@@ -25,6 +25,9 @@ public class SelectionTool implements Tool {
     // Pixels cut from the canvas and currently being dragged.
     private BufferedImage floatingContent;
 
+    // Canvas reference for committing floating content on deactivation.
+    private DrawingCanvas activeCanvas;
+
     // Incremented each timer tick to animate the dashes.
     private long animFrame;
 
@@ -47,6 +50,7 @@ public class SelectionTool implements Tool {
 
     @Override
     public void onActivated(BufferedImage image, DrawingCanvas canvas) {
+        activeCanvas = canvas;
         antTimer = new Timer(100, e -> {
             animFrame++;
             canvas.repaint();
@@ -59,9 +63,11 @@ public class SelectionTool implements Tool {
         if (antTimer != null) {
             antTimer.stop();
         }
-        // Floating content cannot be committed here because we have no image
-        // reference. It will be committed on the next mousePressed or via
-        // commitSelection().
+        if (activeCanvas != null && floatingContent != null) {
+            commitSelection(activeCanvas.getActiveLayerImage());
+        }
+        clearSelection();
+        activeCanvas = null;
     }
 
     // -------------------------------------------------------------------------

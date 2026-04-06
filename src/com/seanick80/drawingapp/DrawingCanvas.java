@@ -243,6 +243,13 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     @Override
     public void mouseMoved(MouseEvent e) {
         updateStatus(e);
+        if (activeTool != null) {
+            activeTool.mouseMoved(getActiveLayerImage(),
+                toImageX(e.getX()), toImageY(e.getY()), this);
+            if (activeTool.needsPersistentPreview()) {
+                repaint();
+            }
+        }
     }
 
     @Override

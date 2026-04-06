@@ -14,6 +14,9 @@ public interface Tool {
     void mouseReleased(BufferedImage image, int x, int y, DrawingCanvas canvas);
     void drawPreview(Graphics2D g);
 
+    /** Called when the mouse moves over the canvas without a button pressed. */
+    default void mouseMoved(BufferedImage image, int x, int y, DrawingCanvas canvas) {}
+
     /** Called when the mouse wheel is scrolled over the canvas. */
     default void mouseWheelMoved(BufferedImage image, int x, int y, int wheelRotation, DrawingCanvas canvas) {}
 

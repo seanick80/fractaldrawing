@@ -85,8 +85,8 @@ public class FractalRenderController {
     }
 
     public void triggerRender() {
-        if (lastImage != null && lastCanvas != null) {
-            renderAsync(lastImage, lastCanvas);
+        if (lastCanvas != null) {
+            renderAsync(lastCanvas.getActiveLayerImage(), lastCanvas);
         }
     }
 
@@ -126,7 +126,8 @@ public class FractalRenderController {
                     if (fractalImage != null) {
                         canvas.setPanOffset(0, 0);
                         canvas.resetViewZoom();
-                        Graphics2D g = image.createGraphics();
+                        BufferedImage target = canvas.getActiveLayerImage();
+                        Graphics2D g = target.createGraphics();
                         g.drawImage(fractalImage, 0, 0, null);
                         g.dispose();
                         canvas.repaint();

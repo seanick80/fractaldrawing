@@ -3,7 +3,6 @@ package com.seanick80.drawingapp.tools;
 import com.seanick80.drawingapp.DrawingCanvas;
 
 import javax.swing.*;
-import javax.swing.event.ChangeListener;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
@@ -27,11 +26,23 @@ public class TextTool implements Tool {
     private long animFrame;
     private Timer antTimer;
 
-    // Overlay text field added to canvas
-    private JTextField textField;
+    // Overlay text area added to canvas (Issue #10: JTextArea for multiline)
+    private JTextArea textArea;
+    private JScrollPane scrollPane;
 
     // Canvas reference for timer repaints
     private DrawingCanvas activeCanvas;
+
+    // Text color from canvas foreground (Issue #12)
+    private Color textColor = Color.BLACK;
+
+    // Click-drag text rectangle (Issue #9)
+    private int dragStartX, dragStartY, dragEndX, dragEndY;
+    private boolean defining;
+
+    // Drag-to-reposition during editing (Issue #2)
+    private boolean editDragging;
+    private int editDragStartX, editDragStartY;
 
     @Override
     public String getName() { return "Text"; }
@@ -59,10 +70,18 @@ public class TextTool implements Tool {
             if (floatingText != null) {
                 commitFloatingToLayer(activeCanvas.getActiveLayerImage());
             }
-            if (textField != null) {
+            if (textArea != null) {
                 commitText(activeCanvas);
             }
         }
+        // Always clear transient state regardless of activeCanvas
+        floatingText = null;
+        textBounds = null;
+        moveOffX = 0;
+        moveOffY = 0;
+        editing = false;
+        currentText = "";
+        defining = false;
         if (antTimer != null) {
             antTimer.stop();
             antTimer = null;
@@ -90,8 +109,35 @@ public class TextTool implements Tool {
             commitFloatingToLayer(image);
         }
 
-        // Start new text entry
-        startEditing(x, y, canvas);
+        // Issue #2: Handle clicks during editing
+        if (textArea != null) {
+            Rectangle areaBounds = scrollPane != null ? scrollPane.getBounds() : textArea.getBounds();
+            // Expand bounds by 20px for drag handle zone
+            Rectangle dragZone = new Rectangle(
+                areaBounds.x - 20, areaBounds.y - 20,
+                areaBounds.width + 40, areaBounds.height + 40);
+
+            if (areaBounds.contains(x, y)) {
+                // Click inside text area - let Swing handle text editing
+                return;
+            } else if (dragZone.contains(x, y)) {
+                // Click near the border - start repositioning
+                editDragging = true;
+                editDragStartX = x;
+                editDragStartY = y;
+                return;
+            } else {
+                // Click far outside - commit text and start fresh below
+                commitText(canvas);
+            }
+        }
+
+        // Issue #9: Start defining text rectangle
+        dragStartX = x;
+        dragStartY = y;
+        dragEndX = x;
+        dragEndY = y;
+        defining = true;
     }
 
     @Override
@@ -101,6 +147,30 @@ public class TextTool implements Tool {
             moveOffY += y - startMoveY;
             startMoveX = x;
             startMoveY = y;
+            return;
+        }
+
+        // Issue #2: Reposition text area during editing
+        if (editDragging && textArea != null) {
+            int deltaX = x - editDragStartX;
+            int deltaY = y - editDragStartY;
+            textX += deltaX;
+            textY += deltaY;
+            editDragStartX = x;
+            editDragStartY = y;
+            Component target = scrollPane != null ? scrollPane : textArea;
+            Rectangle bounds = target.getBounds();
+            target.setBounds(bounds.x + deltaX, bounds.y + deltaY,
+                    bounds.width, bounds.height);
+            canvas.repaint();
+            return;
+        }
+
+        // Issue #9: Update drag rectangle
+        if (defining) {
+            dragEndX = x;
+            dragEndY = y;
+            canvas.repaint();
         }
     }
 
@@ -108,6 +178,26 @@ public class TextTool implements Tool {
     public void mouseReleased(BufferedImage image, int x, int y, DrawingCanvas canvas) {
         if (moving) {
             moving = false;
+            return;
+        }
+
+        // Issue #2: Stop edit dragging
+        if (editDragging) {
+            editDragging = false;
+            return;
+        }
+
+        // Issue #9: Finish defining text rectangle
+        if (defining) {
+            defining = false;
+            int rx = Math.min(dragStartX, dragEndX);
+            int ry = Math.min(dragStartY, dragEndY);
+            int rw = Math.abs(dragEndX - dragStartX);
+            int rh = Math.abs(dragEndY - dragStartY);
+
+            // Small drag = click: use default width
+            int width = (rw < 10 && rh < 10) ? 300 : rw;
+            startEditing(rx, ry, width, canvas);
         }
     }
 
@@ -117,12 +207,31 @@ public class TextTool implements Tool {
 
     @Override
     public void drawPreview(Graphics2D g) {
-        // Show live text while editing
+        // Issue #9: Show dashed rectangle while defining text area
+        if (defining) {
+            int rx = Math.min(dragStartX, dragEndX);
+            int ry = Math.min(dragStartY, dragEndY);
+            int rw = Math.abs(dragEndX - dragStartX);
+            int rh = Math.abs(dragEndY - dragStartY);
+            float[] dash = { 6f, 4f };
+            g.setColor(Color.GRAY);
+            g.setStroke(new BasicStroke(1f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
+                    10f, dash, 0f));
+            g.drawRect(rx, ry, rw, rh);
+        }
+
+        // Show live text while editing (multiline)
         if (editing && !currentText.isEmpty()) {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g.setFont(currentFont);
-            g.setColor(Color.BLACK);
-            g.drawString(currentText, textX, textY);
+            g.setColor(textColor); // Issue #12: use actual text color
+            FontMetrics fm = g.getFontMetrics();
+            String[] lines = currentText.split("\n", -1);
+            int lineY = textY;
+            for (String line : lines) {
+                g.drawString(line, textX, lineY);
+                lineY += fm.getHeight();
+            }
         }
 
         // Show floating text with marching ants after commit
@@ -241,8 +350,8 @@ public class TextTool implements Tool {
     // Text editing
     // -------------------------------------------------------------------------
 
-    private void startEditing(int x, int y, DrawingCanvas canvas) {
-        if (textField != null) {
+    private void startEditing(int x, int y, int width, DrawingCanvas canvas) {
+        if (textArea != null) {
             commitText(canvas);
         }
 
@@ -250,57 +359,101 @@ public class TextTool implements Tool {
         textY = y;
         editing = true;
 
-        textField = new JTextField(20);
-        textField.setFont(currentFont);
-        textField.setOpaque(false);
-        textField.setBorder(BorderFactory.createDashedBorder(Color.GRAY));
-        textField.setBounds(x, y - currentFont.getSize(), 300, currentFont.getSize() + 8);
+        // Issue #12: capture foreground color
+        textColor = canvas.getForegroundColor();
 
-        textField.addActionListener(e -> commitText(canvas));
-        textField.addKeyListener(new KeyAdapter() {
+        // Issue #10: JTextArea for multiline editing
+        textArea = new JTextArea();
+        textArea.setFont(currentFont);
+        textArea.setForeground(textColor);
+        textArea.setOpaque(false);
+        textArea.setBackground(new Color(0, 0, 0, 0));
+        textArea.setLineWrap(true);
+        textArea.setWrapStyleWord(true);
+        textArea.setBorder(null);
+
+        // Ctrl+Enter commits text (Issue #10: Enter creates newline naturally)
+        textArea.addKeyListener(new KeyAdapter() {
+            @Override
+            public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER
+                        && (e.getModifiersEx() & KeyEvent.CTRL_DOWN_MASK) != 0) {
+                    e.consume();
+                    commitText(canvas);
+                }
+            }
+
             @Override
             public void keyReleased(KeyEvent e) {
-                currentText = textField.getText();
+                currentText = textArea.getText();
                 canvas.repaint();
             }
         });
 
+        // Wrap in JScrollPane
+        scrollPane = new JScrollPane(textArea);
+        scrollPane.setBorder(BorderFactory.createDashedBorder(Color.GRAY));
+        scrollPane.setOpaque(false);
+        scrollPane.getViewport().setOpaque(false);
+        int height = Math.max(currentFont.getSize() + 8, currentFont.getSize() * 3);
+        scrollPane.setBounds(x, y - currentFont.getSize(), width, height);
+
         canvas.setLayout(null);
-        canvas.add(textField);
+        canvas.add(scrollPane);
         canvas.revalidate();
         canvas.repaint();
-        textField.requestFocusInWindow();
+        textArea.requestFocusInWindow();
     }
 
     private void commitText(DrawingCanvas canvas) {
-        if (textField == null || currentText.isEmpty()) {
-            removeTextField(canvas);
+        if (textArea == null || currentText.isEmpty()) {
+            removeTextArea(canvas);
             return;
         }
 
-        // Measure text to create floating image
+        // Issue #3: Measure multiline text for tight bounds
         BufferedImage layerImg = canvas.getActiveLayerImage();
         Graphics2D measure = layerImg.createGraphics();
         measure.setFont(currentFont);
         FontMetrics fm = measure.getFontMetrics();
-        int tw = fm.stringWidth(currentText);
-        int th = fm.getHeight();
+
+        String[] lines = currentText.split("\n", -1);
+        // Remove trailing empty line from split
+        int lineCount = lines.length;
+        if (lineCount > 1 && lines[lineCount - 1].isEmpty()) {
+            lineCount--;
+        }
+
+        int maxWidth = 0;
+        for (int i = 0; i < lineCount; i++) {
+            int lw = fm.stringWidth(lines[i]);
+            if (lw > maxWidth) maxWidth = lw;
+        }
+        int totalHeight = lineCount * fm.getHeight();
         measure.dispose();
 
-        // Create floating text image
+        int tw = maxWidth;
+        int th = totalHeight;
+
+        // Create floating text image (tight to content + small padding)
         floatingText = new BufferedImage(tw + 4, th + 4, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = floatingText.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g.setFont(currentFont);
-        g.setColor(canvas.getForegroundColor());
-        g.drawString(currentText, 2, fm.getAscent() + 2);
+        g.setColor(textColor); // Issue #12: use stored text color
+        int lineY = fm.getAscent() + 2;
+        for (int i = 0; i < lineCount; i++) {
+            g.drawString(lines[i], 2, lineY);
+            lineY += fm.getHeight();
+        }
         g.dispose();
 
+        // Issue #3: Tight bounds around actual text content
         textBounds = new Rectangle(textX, textY - fm.getAscent() - 2, tw + 4, th + 4);
         moveOffX = 0;
         moveOffY = 0;
 
-        removeTextField(canvas);
+        removeTextArea(canvas);
         editing = false;
         currentText = "";
     }
@@ -316,13 +469,18 @@ public class TextTool implements Tool {
         moveOffY = 0;
     }
 
-    private void removeTextField(DrawingCanvas canvas) {
-        if (textField != null) {
-            canvas.remove(textField);
-            canvas.revalidate();
-            canvas.repaint();
-            textField = null;
+    private void removeTextArea(DrawingCanvas canvas) {
+        if (scrollPane != null) {
+            canvas.remove(scrollPane);
+            scrollPane = null;
         }
+        if (textArea != null) {
+            // In case textArea was added directly without scrollPane
+            canvas.remove(textArea);
+            textArea = null;
+        }
+        canvas.revalidate();
+        canvas.repaint();
     }
 
     // -------------------------------------------------------------------------
@@ -335,11 +493,38 @@ public class TextTool implements Tool {
         if (italic) style |= Font.ITALIC;
         currentFont = new Font(fontFamily, style, fontSize);
 
-        // Update the overlay text field if active
-        if (textField != null) {
-            textField.setFont(currentFont);
-            textField.setBounds(textX, textY - currentFont.getSize(),
-                    300, currentFont.getSize() + 8);
+        // Update the overlay text area if active
+        if (textArea != null) {
+            textArea.setFont(currentFont);
+            if (scrollPane != null) {
+                int height = Math.max(currentFont.getSize() + 8, currentFont.getSize() * 3);
+                scrollPane.setBounds(textX, textY - currentFont.getSize(),
+                        scrollPane.getWidth(), height);
+            }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Public API for external callers (Escape key, undo, etc.)
+    // -------------------------------------------------------------------------
+
+    /** Commits any floating text and active editing to the layer, then clears all state. */
+    public void commitAndClear(BufferedImage image) {
+        commitFloatingToLayer(image);
+        if (activeCanvas != null && textArea != null) {
+            commitText(activeCanvas);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Package-private accessors for testing
+    // -------------------------------------------------------------------------
+
+    String getCurrentText() { return currentText; }
+    Color getTextColor() { return textColor; }
+    boolean isEditing() { return editing; }
+    boolean isDefining() { return defining; }
+    JTextArea getTextArea() { return textArea; }
+    BufferedImage getFloatingText() { return floatingText; }
+    Rectangle getTextBounds() { return textBounds; }
 }

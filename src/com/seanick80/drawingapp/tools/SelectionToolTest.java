@@ -110,4 +110,39 @@ class SelectionToolTest {
         SelectionTool sel = new SelectionTool();
         assertEquals("Select", sel.getName());
     }
+
+    @Test @MediumTest
+    void deactivationCommitsFloatingContent() {
+        BufferedImage img = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(Color.RED);
+        g.fillRect(10, 10, 30, 30);
+        g.dispose();
+
+        DrawingCanvas canvas = TestHelpers.testCanvas(100, 100);
+        // Draw the red square onto the canvas layer too
+        Graphics2D lg = canvas.getActiveLayerImage().createGraphics();
+        lg.setColor(Color.RED);
+        lg.fillRect(10, 10, 30, 30);
+        lg.dispose();
+
+        SelectionTool sel = new SelectionTool();
+        sel.onActivated(canvas.getActiveLayerImage(), canvas);
+
+        // Select and cut the red area to create floating content
+        sel.mousePressed(canvas.getActiveLayerImage(), 10, 10, canvas);
+        sel.mouseDragged(canvas.getActiveLayerImage(), 40, 40, canvas);
+        sel.mouseReleased(canvas.getActiveLayerImage(), 40, 40, canvas);
+        sel.cutSelection(canvas.getActiveLayerImage());
+
+        // The cut region should be transparent
+        int alphaBefore = (canvas.getActiveLayerImage().getRGB(25, 25) >> 24) & 0xFF;
+        assertEquals(0, alphaBefore, "Cut region should be transparent before deactivation");
+
+        // Deactivate should commit floating content back
+        sel.onDeactivated();
+
+        int alphaAfter = (canvas.getActiveLayerImage().getRGB(25, 25) >> 24) & 0xFF;
+        assertTrue(alphaAfter > 0, "Floating content should be committed on deactivation");
+    }
 }

@@ -40,7 +40,26 @@ public class DrawingApp extends JFrame {
 
     public DrawingApp() {
         super("Drawing App");
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                int choice = JOptionPane.showConfirmDialog(
+                    DrawingApp.this,
+                    "Save before closing?",
+                    "Confirm Exit",
+                    JOptionPane.YES_NO_CANCEL_OPTION);
+                if (choice == JOptionPane.YES_OPTION) {
+                    saveFile();
+                    dispose();
+                    System.exit(0);
+                } else if (choice == JOptionPane.NO_OPTION) {
+                    dispose();
+                    System.exit(0);
+                }
+                // CANCEL: do nothing, stay open
+            }
+        });
 
         undoManager = new UndoManager(80);
         fillRegistry = new FillRegistry();
@@ -57,6 +76,26 @@ public class DrawingApp extends JFrame {
         canvas.setColorPicker(colorPicker);
         canvas.setActiveTool(toolBar.getActiveTool());
         toolBar.setToolChangeListener(this::onToolChanged);
+
+        // Escape: deselect all selections
+        canvas.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+            .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "deselect");
+        canvas.getActionMap().put("deselect", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                deselectAll();
+            }
+        });
+
+        // Delete: delete selected content
+        canvas.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+            .put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "deleteSelection");
+        canvas.getActionMap().put("deleteSelection", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                deleteActiveSelection();
+            }
+        });
 
         dockManager = new DockManager(this);
 
@@ -161,7 +200,11 @@ public class DrawingApp extends JFrame {
         saveAsItem.addActionListener(e -> saveImageAs());
 
         JMenuItem exitItem = new JMenuItem("Exit");
-        exitItem.addActionListener(e -> System.exit(0));
+        exitItem.addActionListener(e -> {
+            // Dispatch a window closing event so the close prompt is reused
+            dispatchEvent(new java.awt.event.WindowEvent(
+                DrawingApp.this, java.awt.event.WindowEvent.WINDOW_CLOSING));
+        });
 
         fileMenu.add(newItem);
         fileMenu.add(openItem);
@@ -177,6 +220,7 @@ public class DrawingApp extends JFrame {
         undoItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK));
         undoItem.addActionListener(e -> {
             undoManager.undo(canvas.getLayerManager());
+            clearAllSelections();
             canvas.repaint();
         });
 
@@ -189,8 +233,12 @@ public class DrawingApp extends JFrame {
 
         JMenuItem clearItem = new JMenuItem("Clear");
         clearItem.addActionListener(e -> {
-            canvas.saveUndoState();
-            canvas.clearCanvas();
+            if (hasActiveSelection()) {
+                deleteActiveSelection();
+            } else {
+                canvas.saveUndoState();
+                canvas.clearCanvas();
+            }
         });
 
         JMenuItem cutItem = new JMenuItem("Cut");
@@ -456,6 +504,15 @@ public class DrawingApp extends JFrame {
     }
 
     private void newImage() {
+        int choice = JOptionPane.showConfirmDialog(this,
+                "Save current file before creating a new image?",
+                "Save Changes",
+                JOptionPane.YES_NO_CANCEL_OPTION);
+        if (choice == JOptionPane.YES_OPTION) {
+            saveFile();
+        } else if (choice == JOptionPane.CANCEL_OPTION) {
+            return;
+        }
         String input = JOptionPane.showInputDialog(this, "Enter size (WxH):", "800x600");
         if (input == null) return;
         String[] parts = input.toLowerCase().split("x");
@@ -463,6 +520,7 @@ public class DrawingApp extends JFrame {
             int w = Integer.parseInt(parts[0].trim());
             int h = Integer.parseInt(parts[1].trim());
             canvas.newImage(w, h);
+            toolBar.resetAllTools();
             currentFile = null;
             updateTitle();
         } catch (Exception ex) {
@@ -471,6 +529,15 @@ public class DrawingApp extends JFrame {
     }
 
     private void openImage() {
+        int choice = JOptionPane.showConfirmDialog(this,
+                "Save current file before opening?",
+                "Save Changes",
+                JOptionPane.YES_NO_CANCEL_OPTION);
+        if (choice == JOptionPane.YES_OPTION) {
+            saveFile();
+        } else if (choice == JOptionPane.CANCEL_OPTION) {
+            return;
+        }
         JFileChooser chooser = new JFileChooser();
         chooser.addChoosableFileFilter(new FileNameExtensionFilter("FDP Project (*.fdp)", "fdp"));
         chooser.addChoosableFileFilter(new FileNameExtensionFilter("PNG Image (*.png)", "png"));
@@ -487,6 +554,7 @@ public class DrawingApp extends JFrame {
                         canvas.loadImage(img);
                     }
                 }
+                toolBar.resetAllTools();
                 currentFile = file;
                 updateTitle();
             } catch (Exception ex) {
@@ -616,6 +684,85 @@ public class DrawingApp extends JFrame {
 
         canvas.repaint();
         lm.fireChange();
+    }
+
+    // -------------------------------------------------------------------------
+    // Selection helpers (used by Undo, Escape, Delete, Clear)
+    // -------------------------------------------------------------------------
+
+    /** Clears all selection tool state without committing floating content. */
+    private void clearAllSelections() {
+        SelectionTool sel = getSelectionTool();
+        if (sel != null) sel.clearSelection();
+        MagicWandTool wand = getMagicWandTool();
+        if (wand != null) wand.clearSelection();
+        LassoTool lasso = getLassoTool();
+        if (lasso != null) lasso.clearSelection();
+    }
+
+    /** Commits all floating content and clears all selections (Escape / Deselect). */
+    private void deselectAll() {
+        BufferedImage layerImg = canvas.getActiveLayerImage();
+        SelectionTool sel = getSelectionTool();
+        if (sel != null) {
+            sel.commitSelection(layerImg);
+            sel.clearSelection();
+        }
+        MagicWandTool wand = getMagicWandTool();
+        if (wand != null) {
+            wand.commitFloating(layerImg);
+            wand.clearSelection();
+        }
+        LassoTool lasso = getLassoTool();
+        if (lasso != null) {
+            lasso.commitFloating(layerImg);
+            lasso.clearSelection();
+        }
+        // Also handle text tool floating text
+        Tool textTool = toolBar.getTool("Text");
+        if (textTool instanceof TextTool tt) {
+            tt.commitAndClear(layerImg);
+        }
+        canvas.repaint();
+    }
+
+    /** Returns true if any selection tool has an active selection. */
+    private boolean hasActiveSelection() {
+        SelectionTool sel = getSelectionTool();
+        if (sel != null && sel.hasSelection()) return true;
+        MagicWandTool wand = getMagicWandTool();
+        if (wand != null && wand.hasSelection()) return true;
+        LassoTool lasso = getLassoTool();
+        if (lasso != null && lasso.hasSelection()) return true;
+        return false;
+    }
+
+    /** Deletes the active selection content (Delete key). */
+    private void deleteActiveSelection() {
+        BufferedImage layerImg = canvas.getActiveLayerImage();
+        SelectionTool sel = getSelectionTool();
+        if (sel != null && sel.hasSelection()) {
+            canvas.saveUndoState();
+            sel.deleteSelection(layerImg);
+            sel.clearSelection();
+            canvas.repaint();
+            return;
+        }
+        MagicWandTool wand = getMagicWandTool();
+        if (wand != null && wand.hasSelection()) {
+            canvas.saveUndoState();
+            wand.deleteSelection(layerImg);
+            wand.clearSelection();
+            canvas.repaint();
+            return;
+        }
+        LassoTool lasso = getLassoTool();
+        if (lasso != null && lasso.hasSelection()) {
+            canvas.saveUndoState();
+            lasso.deleteSelection(layerImg);
+            lasso.clearSelection();
+            canvas.repaint();
+        }
     }
 
     public static void main(String[] args) {

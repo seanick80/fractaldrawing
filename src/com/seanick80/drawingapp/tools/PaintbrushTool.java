@@ -12,11 +12,14 @@ public class PaintbrushTool implements Tool {
     enum BrushTexture { SMOOTH, SPECKLE, CHALK, SCATTER }
 
     private int lastX, lastY;
+    private int previewX = -1, previewY = -1;
+    private Color previewColor = Color.BLACK;
     private int strokeSize = 12;
     private float opacity = 1.0f;
     private float hardness = 0.7f;
     private BrushShape brushShape = BrushShape.ROUND;
     private BrushTexture brushTexture = BrushTexture.SMOOTH;
+    private JPanel brushPreview;
 
     @Override
     public String getName() { return "Brush"; }
@@ -31,9 +34,22 @@ public class PaintbrushTool implements Tool {
     public void setStrokeSize(int size) { this.strokeSize = size; }
 
     @Override
+    public boolean needsPersistentPreview() { return true; }
+
+    @Override
+    public void mouseMoved(BufferedImage image, int x, int y, DrawingCanvas canvas) {
+        previewX = x;
+        previewY = y;
+        previewColor = canvas.getForegroundColor();
+    }
+
+    @Override
     public void mousePressed(BufferedImage image, int x, int y, DrawingCanvas canvas) {
         lastX = x;
         lastY = y;
+        previewX = x;
+        previewY = y;
+        previewColor = canvas.getForegroundColor();
         paintStamp(image, x, y, canvas.getForegroundColor());
     }
 
@@ -59,13 +75,72 @@ public class PaintbrushTool implements Tool {
     public void mouseReleased(BufferedImage image, int x, int y, DrawingCanvas canvas) {}
 
     @Override
-    public void drawPreview(Graphics2D g) {}
+    public void drawPreview(Graphics2D g) {
+        if (previewX < 0) return;
+        int radius = Math.max(1, strokeSize / 2);
+        g.setColor(new Color(
+            previewColor.getRed(), previewColor.getGreen(),
+            previewColor.getBlue(), 128));
+        g.setStroke(new BasicStroke(1f));
+        switch (brushShape) {
+            case ROUND:
+                g.drawOval(previewX - radius, previewY - radius,
+                    radius * 2, radius * 2);
+                break;
+            case SQUARE:
+                g.drawRect(previewX - radius, previewY - radius,
+                    radius * 2, radius * 2);
+                break;
+            case DIAMOND:
+                int[] xp = {previewX, previewX + radius, previewX, previewX - radius};
+                int[] yp = {previewY - radius, previewY, previewY + radius, previewY};
+                g.drawPolygon(xp, yp, 4);
+                break;
+        }
+    }
 
     @Override
     public JPanel createSettingsPanel(ToolSettingsContext ctx) {
-        JPanel sizePanel = ToolSettingsBuilder.createStrokeSizePanel(strokeSize, size -> {
-            this.strokeSize = size;
+        // Custom size panel with brush-aware preview
+        JSpinner sizeSpinner = ToolSettingsBuilder.createStrokeSpinner(strokeSize, null);
+
+        brushPreview = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                BufferedImage img = new BufferedImage(
+                        getWidth(), getHeight(), BufferedImage.TYPE_INT_ARGB);
+                Graphics2D g2 = img.createGraphics();
+                g2.setColor(Color.WHITE);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+                g2.dispose();
+                paintStamp(img, getWidth() / 2, getHeight() / 2, previewColor);
+                g.drawImage(img, 0, 0, null);
+            }
+        };
+        brushPreview.setPreferredSize(new Dimension(54, 54));
+        brushPreview.setMinimumSize(new Dimension(54, 54));
+        brushPreview.setMaximumSize(new Dimension(54, 54));
+        brushPreview.setBackground(Color.WHITE);
+        brushPreview.setBorder(javax.swing.BorderFactory.createLineBorder(Color.GRAY));
+        brushPreview.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        sizeSpinner.addChangeListener(e -> {
+            this.strokeSize = (int) sizeSpinner.getValue();
+            brushPreview.repaint();
         });
+
+        JPanel sizePanel = new JPanel();
+        sizePanel.setLayout(new BoxLayout(sizePanel, BoxLayout.Y_AXIS));
+        sizePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel sizeLabel = new JLabel("Size:");
+        sizeLabel.setFont(sizeLabel.getFont().deriveFont(Font.BOLD, 11f));
+        sizeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sizePanel.add(sizeLabel);
+        sizePanel.add(Box.createVerticalStrut(2));
+        sizePanel.add(sizeSpinner);
+        sizePanel.add(Box.createVerticalStrut(4));
+        sizePanel.add(brushPreview);
 
         JPanel shapePanel = createShapePanel();
 
@@ -73,10 +148,12 @@ public class PaintbrushTool implements Tool {
 
         JPanel opacityPanel = createSliderPanel("Opacity", (int) (opacity * 100), value -> {
             opacity = value / 100.0f;
+            if (brushPreview != null) brushPreview.repaint();
         });
 
         JPanel hardnessPanel = createSliderPanel("Hardness", (int) (hardness * 100), value -> {
             hardness = value / 100.0f;
+            if (brushPreview != null) brushPreview.repaint();
         });
 
         JPanel panel = new JPanel();
@@ -152,7 +229,10 @@ public class PaintbrushTool implements Tool {
             }
         });
 
-        combo.addActionListener(e -> brushShape = (BrushShape) combo.getSelectedItem());
+        combo.addActionListener(e -> {
+            brushShape = (BrushShape) combo.getSelectedItem();
+            if (brushPreview != null) brushPreview.repaint();
+        });
 
         panel.add(label);
         panel.add(Box.createVerticalStrut(2));
@@ -223,7 +303,10 @@ public class PaintbrushTool implements Tool {
             }
         });
 
-        combo.addActionListener(e -> brushTexture = (BrushTexture) combo.getSelectedItem());
+        combo.addActionListener(e -> {
+            brushTexture = (BrushTexture) combo.getSelectedItem();
+            if (brushPreview != null) brushPreview.repaint();
+        });
 
         panel.add(label);
         panel.add(Box.createVerticalStrut(2));

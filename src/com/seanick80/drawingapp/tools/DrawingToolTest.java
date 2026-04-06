@@ -61,14 +61,19 @@ class DrawingToolTest {
     void rectangleToolFilled() {
         BufferedImage img = TestHelpers.whiteImage(100, 100);
         DrawingCanvas canvas = TestHelpers.testCanvas(100, 100);
+        // Solid fill uses the background color; set it to blue so fill is visible
+        ColorPicker cp = new ColorPicker(canvas);
+        cp.setBackgroundColor(Color.BLUE);
+        canvas.setColorPicker(cp);
         RectangleTool rect = new RectangleTool();
         rect.setStrokeSize(1);
         rect.setFilled(true);
         rect.setFillProvider(new SolidFill());
         rect.mousePressed(img, 10, 10, canvas);
         rect.mouseReleased(img, 90, 90, canvas);
-        boolean interiorFilled = (img.getRGB(50, 50) & 0x00FFFFFF) != 0x00FFFFFF;
-        assertTrue(interiorFilled, "Filled rectangle interior should be non-white");
+        int interiorRgb = img.getRGB(50, 50) & 0x00FFFFFF;
+        assertEquals(Color.BLUE.getRGB() & 0x00FFFFFF, interiorRgb,
+            "Solid fill should use background color");
     }
 
     @Test @MediumTest

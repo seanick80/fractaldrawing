@@ -49,9 +49,9 @@ public class FractalTool implements Tool {
         if (toolbar != null) {
             toolbar.setPaletteCycleRenderer(renderer);
             toolbar.setPaletteCycleFrameCallback(img -> {
-                BufferedImage target = renderController.getLastImage();
                 DrawingCanvas canvas = renderController.getLastCanvas();
-                if (target != null && canvas != null && img != null) {
+                if (canvas != null && img != null) {
+                    BufferedImage target = canvas.getActiveLayerImage();
                     Graphics2D g = target.createGraphics();
                     g.drawImage(img, 0, 0, null);
                     g.dispose();

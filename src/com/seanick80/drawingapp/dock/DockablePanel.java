@@ -163,8 +163,93 @@ public class DockablePanel extends JPanel {
             floatingDialog.setLocation(ownerLoc.x + owner.getWidth() + 5, ownerLoc.y);
         }
 
+        addResizeSupport(floatingDialog);
         floatingDialog.setVisible(true);
         docked = false;
+    }
+
+    private void addResizeSupport(JDialog dialog) {
+        int margin = 6;
+        JRootPane root = dialog.getRootPane();
+        MouseAdapter resizer = new MouseAdapter() {
+            private int edge;
+            private Point start;
+            private Rectangle startBounds;
+
+            private int detectEdge(MouseEvent e) {
+                int x = e.getX(), y = e.getY();
+                int w = root.getWidth(), h = root.getHeight();
+                boolean r = x >= w - margin, b = y >= h - margin;
+                boolean l = x <= margin, t = y <= margin;
+                if (r && b) return Cursor.SE_RESIZE_CURSOR;
+                if (l && b) return Cursor.SW_RESIZE_CURSOR;
+                if (r && t) return Cursor.NE_RESIZE_CURSOR;
+                if (l && t) return Cursor.NW_RESIZE_CURSOR;
+                if (r) return Cursor.E_RESIZE_CURSOR;
+                if (b) return Cursor.S_RESIZE_CURSOR;
+                if (l) return Cursor.W_RESIZE_CURSOR;
+                if (t) return Cursor.N_RESIZE_CURSOR;
+                return 0;
+            }
+
+            @Override
+            public void mouseMoved(MouseEvent e) {
+                int detected = detectEdge(e);
+                root.setCursor(detected == 0
+                    ? Cursor.getDefaultCursor()
+                    : Cursor.getPredefinedCursor(detected));
+            }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                edge = detectEdge(e);
+                start = e.getLocationOnScreen();
+                startBounds = dialog.getBounds();
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (edge == 0 || start == null) return;
+                Point now = e.getLocationOnScreen();
+                int dx = now.x - start.x, dy = now.y - start.y;
+                Rectangle b = new Rectangle(startBounds);
+                int minW = 180, minH = 100;
+
+                boolean east = edge == Cursor.E_RESIZE_CURSOR
+                    || edge == Cursor.SE_RESIZE_CURSOR
+                    || edge == Cursor.NE_RESIZE_CURSOR;
+                boolean south = edge == Cursor.S_RESIZE_CURSOR
+                    || edge == Cursor.SE_RESIZE_CURSOR
+                    || edge == Cursor.SW_RESIZE_CURSOR;
+                boolean west = edge == Cursor.W_RESIZE_CURSOR
+                    || edge == Cursor.SW_RESIZE_CURSOR
+                    || edge == Cursor.NW_RESIZE_CURSOR;
+                boolean north = edge == Cursor.N_RESIZE_CURSOR
+                    || edge == Cursor.NE_RESIZE_CURSOR
+                    || edge == Cursor.NW_RESIZE_CURSOR;
+
+                if (east) b.width = Math.max(minW, startBounds.width + dx);
+                if (south) b.height = Math.max(minH, startBounds.height + dy);
+                if (west) {
+                    int newW = Math.max(minW, startBounds.width - dx);
+                    b.x = startBounds.x + startBounds.width - newW;
+                    b.width = newW;
+                }
+                if (north) {
+                    int newH = Math.max(minH, startBounds.height - dy);
+                    b.y = startBounds.y + startBounds.height - newH;
+                    b.height = newH;
+                }
+                dialog.setBounds(b);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                edge = 0;
+            }
+        };
+        root.addMouseListener(resizer);
+        root.addMouseMotionListener(resizer);
     }
 
     public void dock() {

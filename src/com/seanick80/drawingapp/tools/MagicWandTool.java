@@ -25,6 +25,9 @@ public class MagicWandTool implements Tool {
     private int moveOffX, moveOffY;
     private BufferedImage floatingContent;
 
+    // Canvas reference for committing floating content on deactivation.
+    private DrawingCanvas activeCanvas;
+
     @Override
     public String getName() { return "Magic Wand"; }
 
@@ -33,6 +36,7 @@ public class MagicWandTool implements Tool {
 
     @Override
     public void onActivated(BufferedImage image, DrawingCanvas canvas) {
+        activeCanvas = canvas;
         antTimer = new Timer(100, e -> {
             animFrame++;
             canvas.repaint();
@@ -43,6 +47,11 @@ public class MagicWandTool implements Tool {
     @Override
     public void onDeactivated() {
         if (antTimer != null) antTimer.stop();
+        if (activeCanvas != null && floatingContent != null) {
+            commitFloating(activeCanvas.getActiveLayerImage());
+        }
+        clearSelection();
+        activeCanvas = null;
     }
 
     @Override

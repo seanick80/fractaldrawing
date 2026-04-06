@@ -19,8 +19,14 @@ public class LassoTool implements Tool {
     // Move state
     private boolean moving;
     private int startX, startY;
+    // Path throttling — minimum spacing between points
+    private int lastPathX, lastPathY;
+    private static final int MIN_PATH_SPACING_SQ = 9; // 3px squared
     private int moveOffX, moveOffY;
     private BufferedImage floatingContent;
+
+    // Canvas reference for committing floating content on deactivation.
+    private DrawingCanvas activeCanvas;
 
     @Override
     public String getName() { return "Lasso"; }
@@ -30,6 +36,7 @@ public class LassoTool implements Tool {
 
     @Override
     public void onActivated(BufferedImage image, DrawingCanvas canvas) {
+        activeCanvas = canvas;
         antTimer = new Timer(100, e -> {
             animFrame++;
             canvas.repaint();
@@ -40,6 +47,11 @@ public class LassoTool implements Tool {
     @Override
     public void onDeactivated() {
         if (antTimer != null) antTimer.stop();
+        if (activeCanvas != null && floatingContent != null) {
+            commitFloating(activeCanvas.getActiveLayerImage());
+        }
+        clearSelection();
+        activeCanvas = null;
     }
 
     @Override
@@ -63,13 +75,21 @@ public class LassoTool implements Tool {
         moveOffY = 0;
         currentPath = new GeneralPath();
         currentPath.moveTo(x, y);
+        lastPathX = x;
+        lastPathY = y;
         dragging = true;
     }
 
     @Override
     public void mouseDragged(BufferedImage image, int x, int y, DrawingCanvas canvas) {
         if (dragging && currentPath != null) {
-            currentPath.lineTo(x, y);
+            int dx = x - lastPathX;
+            int dy = y - lastPathY;
+            if (dx * dx + dy * dy >= MIN_PATH_SPACING_SQ) {
+                currentPath.lineTo(x, y);
+                lastPathX = x;
+                lastPathY = y;
+            }
         } else if (moving) {
             moveOffX += x - startX;
             moveOffY += y - startY;

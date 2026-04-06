@@ -106,11 +106,32 @@ public class ToolSettingsBuilder {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value,
                     int index, boolean isSelected, boolean cellHasFocus) {
+                StrokeStyle style = (StrokeStyle) value;
+
+                // For collapsed state, show a simple stroke preview without nested panels
+                if (index == -1) {
+                    JPanel display = new JPanel() {
+                        @Override
+                        protected void paintComponent(Graphics g) {
+                            super.paintComponent(g);
+                            Graphics2D g2 = (Graphics2D) g;
+                            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                    RenderingHints.VALUE_ANTIALIAS_ON);
+                            g2.setStroke(style.createStroke(2));
+                            g2.setColor(Color.BLACK);
+                            g2.drawLine(4, getHeight() / 2, getWidth() - 4, getHeight() / 2);
+                        }
+                    };
+                    display.setPreferredSize(new Dimension(100, 20));
+                    display.setBackground(list.getBackground());
+                    return display;
+                }
+
+                // For dropdown items, show preview + text label
                 JPanel cell = new JPanel(new BorderLayout(4, 0));
                 cell.setBackground(isSelected ? list.getSelectionBackground() : list.getBackground());
                 cell.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
 
-                StrokeStyle style = (StrokeStyle) value;
                 JPanel strokePreview = new JPanel() {
                     @Override
                     protected void paintComponent(Graphics g) {
@@ -136,34 +157,11 @@ public class ToolSettingsBuilder {
             }
         });
 
-        JPanel preview = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                Graphics2D g2 = (Graphics2D) g;
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                StrokeStyle style = (StrokeStyle) styleCombo.getSelectedItem();
-                g2.setStroke(style.createStroke(2));
-                g2.setColor(Color.BLACK);
-                int cy = getHeight() / 2;
-                g2.drawLine(4, cy, getWidth() - 4, cy);
-            }
-        };
-        preview.setPreferredSize(new Dimension(120, 20));
-        preview.setMinimumSize(new Dimension(120, 20));
-        preview.setMaximumSize(new Dimension(120, 20));
-        preview.setBackground(Color.WHITE);
-        preview.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        preview.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         styleCombo.addActionListener(e -> {
             if (onChange != null) onChange.accept((StrokeStyle) styleCombo.getSelectedItem());
-            preview.repaint();
         });
 
         panel.add(styleCombo);
-        panel.add(Box.createVerticalStrut(4));
-        panel.add(preview);
         return panel;
     }
 
@@ -219,18 +217,30 @@ public class ToolSettingsBuilder {
                 if (!NONE_ENTRY.equals(name)) {
                     FillProvider fp = fillRegistry.getByName(name);
                     if (fp != null) {
-                        JPanel preview = new JPanel() {
-                            @Override
-                            protected void paintComponent(Graphics g) {
-                                super.paintComponent(g);
-                                Graphics2D g2 = (Graphics2D) g;
-                                g2.setPaint(fp.createPaint(Color.BLACK, 0, 0, getWidth(), getHeight()));
-                                g2.fillRect(0, 0, getWidth(), getHeight());
-                            }
-                        };
-                        preview.setPreferredSize(new Dimension(24, 18));
-                        preview.setBorder(BorderFactory.createLineBorder(Color.GRAY));
-                        cell.add(preview, BorderLayout.WEST);
+                        if (fp instanceof SolidFill) {
+                            // SolidFill uses the background color at draw time,
+                            // so show a "bg" label instead of a misleading black swatch
+                            JLabel bgLabel = new JLabel("bg");
+                            bgLabel.setFont(bgLabel.getFont().deriveFont(Font.ITALIC, 9f));
+                            bgLabel.setPreferredSize(new Dimension(24, 18));
+                            bgLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                            bgLabel.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+                            bgLabel.setForeground(isSelected ? list.getSelectionForeground() : list.getForeground());
+                            cell.add(bgLabel, BorderLayout.WEST);
+                        } else {
+                            JPanel preview = new JPanel() {
+                                @Override
+                                protected void paintComponent(Graphics g) {
+                                    super.paintComponent(g);
+                                    Graphics2D g2 = (Graphics2D) g;
+                                    g2.setPaint(fp.createPaint(Color.BLACK, 0, 0, getWidth(), getHeight()));
+                                    g2.fillRect(0, 0, getWidth(), getHeight());
+                                }
+                            };
+                            preview.setPreferredSize(new Dimension(24, 18));
+                            preview.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+                            cell.add(preview, BorderLayout.WEST);
+                        }
                     }
                 }
 

@@ -69,4 +69,45 @@ class MagicWandToolTest {
         assertEquals("Magic Wand", wand.getName());
         assertTrue(wand.needsPersistentPreview());
     }
+
+    @Test @MediumTest
+    void deactivationCommitsFloatingContent() {
+        BufferedImage img = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = img.createGraphics();
+        g.setColor(Color.GREEN);
+        g.fillRect(0, 0, 100, 100);
+        g.dispose();
+
+        DrawingCanvas canvas = TestHelpers.testCanvas(100, 100);
+        // Draw green onto the canvas layer
+        Graphics2D lg = canvas.getActiveLayerImage().createGraphics();
+        lg.setColor(Color.GREEN);
+        lg.fillRect(0, 0, 100, 100);
+        lg.dispose();
+
+        MagicWandTool wand = new MagicWandTool();
+        wand.onActivated(canvas.getActiveLayerImage(), canvas);
+
+        // Select the green region
+        wand.mousePressed(canvas.getActiveLayerImage(), 50, 50, canvas);
+        assertTrue(wand.hasSelection());
+
+        // Click inside to start moving (creates floating content), then release
+        wand.mousePressed(canvas.getActiveLayerImage(), 50, 50, canvas);
+        wand.mouseReleased(canvas.getActiveLayerImage(), 50, 50, canvas);
+
+        // Delete the selected region so we can verify commit restores it
+        // Actually the floating content was created by the move click above.
+        // The original region was cleared. Now deactivate to commit.
+
+        // Verify the original region is cleared (floating)
+        int alphaBefore = (canvas.getActiveLayerImage().getRGB(50, 50) >> 24) & 0xFF;
+        assertEquals(0, alphaBefore, "Selected region should be cleared after creating floating content");
+
+        // Deactivate should commit floating content back
+        wand.onDeactivated();
+
+        int alphaAfter = (canvas.getActiveLayerImage().getRGB(50, 50) >> 24) & 0xFF;
+        assertTrue(alphaAfter > 0, "Floating content should be committed on deactivation");
+    }
 }

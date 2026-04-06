@@ -135,6 +135,16 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         return tools.get(name);
     }
 
+    /** Deactivate all tools and re-activate the current one, resetting transient state. */
+    public void resetAllTools() {
+        for (Tool tool : tools.values()) {
+            tool.onDeactivated();
+        }
+        if (activeTool != null) {
+            activeTool.onActivated(canvas.getActiveLayerImage(), canvas);
+        }
+    }
+
     /** Set the gradient toolbar's change callback based on the active tool. */
     private void syncGradientToolbar() {
         if (gradientToolbar == null) return;

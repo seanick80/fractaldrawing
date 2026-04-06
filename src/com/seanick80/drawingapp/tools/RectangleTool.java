@@ -2,6 +2,7 @@ package com.seanick80.drawingapp.tools;
 
 import com.seanick80.drawingapp.DrawingCanvas;
 import com.seanick80.drawingapp.fills.FillProvider;
+import com.seanick80.drawingapp.fills.SolidFill;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
@@ -10,6 +11,7 @@ public class RectangleTool implements Tool {
 
     private int startX, startY, endX, endY;
     private Color color;
+    private Color fillColor;
     private boolean active;
     private boolean filled;
     private FillProvider fillProvider;
@@ -43,6 +45,7 @@ public class RectangleTool implements Tool {
         startX = endX = x;
         startY = endY = y;
         color = canvas.getForegroundColor();
+        fillColor = canvas.getBackgroundColor();
         active = true;
     }
 
@@ -72,7 +75,8 @@ public class RectangleTool implements Tool {
         int rh = Math.abs(ey - startY);
 
         if (filled && fillProvider != null) {
-            g.setPaint(fillProvider.createPaint(color, rx, ry, rw, rh));
+            Color base = (fillProvider instanceof SolidFill) ? fillColor : color;
+            g.setPaint(fillProvider.createPaint(base, rx, ry, rw, rh));
             g.fillRect(rx, ry, rw, rh);
         }
         g.setColor(color);
