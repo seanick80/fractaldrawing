@@ -31,35 +31,30 @@ Three selection tools implemented with marching ants, drag-to-move, and floating
 - Brush textures: Smooth, Speckle, Chalk, Scatter
 - Interpolated stamps along drag path
 
+### Color picker upgrade ✅ DONE
+HSB hue-saturation panel with brightness slider, hex/RGB input, recent colors row (last 10), swap fg/bg button, reset button. Keeps palette grid.
+
+### Text tool ✅ DONE
+Visual font preview dropdown (each font rendered in its own typeface), size spinner, bold/italic toggles. Overlay JTextField for text entry, marching ants selection after commit for drag-to-move positioning.
+
+### View menu ✅ DONE
+Zoom In (Ctrl+=), Zoom Out (Ctrl+-), Zoom to Fit (Ctrl+0), Reset Zoom (Ctrl+1).
+
+### Visual dropdowns ✅ DONE
+Brush shape/texture, fill pattern, and stroke style combos all show visual previews instead of text-only.
+
 ### Still TODO
 
 #### Eyedropper enhancements
 - Settings panel with sampled color swatch, hex/RGB values, sample size toggle
 - Alt+click shortcut for temporary eyedropper from any tool
 
-#### Color picker upgrade
-Replace the current fixed 20-color palette with a richer color selection system:
-
-**HSB color panel** — a square hue/saturation field (256×256) with a vertical brightness slider beside it. Click or drag in the field to select hue (x-axis) and saturation (y-axis). The brightness slider adjusts value. This provides intuitive visual color selection without opening a dialog.
-
-**Hex/RGB input** — small text field below the HSB panel showing the current color as `#RRGGBB`. Editable — type a hex code and press Enter to set the color. Expandable to show individual R, G, B numeric spinners.
-
-**Swatch palette** — keep a grid of color swatches below the HSB panel:
-- **Default swatches**: the current 20 colors (or a better curated set)
-- **Recent colors row**: auto-populated with the last 8–12 colors used (drawn or sampled)
-- **Custom swatches**: right-click a swatch slot → "Set to current color" to save frequently used colors. Persist across sessions via a simple config file.
-
-**Foreground/background swatches** — keep the current overlapping fg/bg swatch design, but:
-- **Single-click** a swatch → open the HSB panel focused on that color (inline, not a dialog)
-- **Double-click** a swatch → open the full `JColorChooser` dialog (current behavior, kept as fallback for advanced use)
-- **Swap button** (↔ or press X) — swap foreground and background colors
-- **Reset button** (small icon) — reset to default black foreground / white background (press D)
-
-#### Text tool
-Click on the canvas to place a text cursor. Settings: font family, size, style (bold/italic/underline), alignment. Rasterized onto active layer on commit.
-
 #### Selection resize handles
 Drag corner/edge handles to scale the selected region.
+
+#### Color picker further improvements
+- Custom swatches (right-click to save, persist across sessions)
+- Single-click swatch opens inline HSB editor instead of JColorChooser dialog
 
 ### Object model with non-linear delete (shape selection)
 Move from pure raster to a hybrid model where each drawing operation (rectangle, ellipse, line, text, etc.) is recorded as a vector object with its parameters (type, bounds, color, stroke, fill). The canvas composites all objects on repaint. A selection tool allows clicking individual shapes — hit-testing against stored geometry — to select, move, resize, or delete them out of order. This is distinct from linear undo; any shape can be removed at any time and the remaining shapes re-composite. Pairs naturally with the layer system (objects live on layers). Raster operations like pencil/brush strokes and fractals would remain as flat bitmap objects that can be reordered/deleted but not reshaped.

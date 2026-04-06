@@ -8,12 +8,14 @@ A Java Swing drawing application with an integrated fractal explorer featuring a
 
 ### Drawing Tools
 - **Pencil, Line, Rectangle, Oval, Eraser, Flood Fill** with configurable stroke size
-- **Paintbrush**: Soft radial brush with configurable opacity, hardness, shape (Round/Square/Diamond), and texture (Smooth/Speckle/Chalk/Scatter)
+- **Paintbrush**: Soft radial brush with configurable opacity, hardness, shape (Round/Square/Diamond), and texture (Smooth/Speckle/Chalk/Scatter) — visual preview dropdowns
+- **Text tool**: Visual font preview dropdown (each font rendered in its own typeface), size/bold/italic, overlay text entry, marching ants for drag-to-move positioning
 - **Selection tools**: Rectangle select, Magic Wand (flood-fill tolerance), Lasso (freehand) — all with marching ants, drag-to-move, and floating content
 - **Eyedropper**: Left-click samples foreground color, right-click samples background — from flattened composite
 - **Edit menu**: Cut (Ctrl+X), Copy (Ctrl+C), Paste (Ctrl+V), Select All (Ctrl+A), Deselect (Ctrl+D), Save Selection to Image (PNG with transparency)
-- **Stroke styles**: Solid, Dashed, Dotted, Dash-Dot, Rough/Sketchy — on all shape and line tools
-- **Color picker**: 20-color palette + custom color chooser, foreground/background colors
+- **View menu**: Zoom In (Ctrl+=), Zoom Out (Ctrl+-), Zoom to Fit (Ctrl+0), Reset Zoom (Ctrl+1)
+- **Stroke styles**: Solid, Dashed, Dotted, Dash-Dot, Rough/Sketchy — on all shape and line tools, with visual preview dropdowns
+- **Color picker**: HSB hue-saturation panel with brightness slider, hex/RGB input, 20-color palette, recent colors row, fg/bg swap and reset buttons
 - **Pluggable fill system**: Solid, Gradient, Custom Gradient, Checkerboard, Diagonal Stripes, Crosshatch, Dot Grid, Horizontal Stripes, Noise
 - **Tool-owned settings panels**: Each tool builds its own settings UI — stroke, fill, and style all sync correctly on tool switch
 - **Undo/Redo**: Up to 80 levels with automatic compaction (Ctrl+Z / Ctrl+Y)
@@ -89,7 +91,7 @@ java -cp "out;lib/protobuf-java-4.29.3.jar" com.seanick80.drawingapp.DrawingApp 
 
 ## Testing
 
-223 tests across 33 JUnit 5 test classes, organized by size with tag-based filtering.
+239 tests across 37 JUnit 5 test classes, organized by size with tag-based filtering.
 
 ```bash
 # Run all JUnit tests
@@ -159,7 +161,7 @@ lib/
 └── junit-platform-console-standalone-1.11.4.jar # JUnit 5 test runner
 
 src/com/seanick80/drawingapp/
-├── DrawingApp.java          # Main frame, menus (File, Edit, Fractal)
+├── DrawingApp.java          # Main frame, menus (File, Edit, View, Fractal)
 ├── DrawingCanvas.java       # Canvas with layer compositing and event routing
 ├── ToolBar.java             # Tool selection and settings panel host
 ├── UndoManager.java         # Layer-aware undo/redo with compaction
@@ -214,7 +216,8 @@ src/com/seanick80/drawingapp/
     ├── SelectionTool.java           # Rectangle select with move, marching ants
     ├── MagicWandTool.java           # Flood-fill tolerance selection with bitmap mask
     ├── LassoTool.java               # Freehand lasso selection
-    ├── PaintbrushTool.java          # Soft radial brush with shape/texture options
+    ├── TextTool.java                # Text with visual font preview, marching ants positioning
+    ├── PaintbrushTool.java          # Soft radial brush with visual shape/texture dropdowns
     ├── EyedropperTool.java          # Color sampler from composite image
     └── ...                      # Pencil, Line, Rectangle, Oval, Eraser, Fill
 ```
