@@ -38,7 +38,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
 
         JPanel buttonPanel = new JPanel(new GridLayout(7, 2, 2, 2));
         buttonPanel.setAlignmentX(LEFT_ALIGNMENT);
-        buttonPanel.setMaximumSize(new Dimension(140, 220));
+        buttonPanel.setMaximumSize(new Dimension(140, 240));
 
         addTool(buttonPanel, new SelectionTool(), false);
         addTool(buttonPanel, new PencilTool(), true);
@@ -48,6 +48,7 @@ public class ToolBar extends JPanel implements ToolSettingsContext {
         addTool(buttonPanel, new OvalTool(), false);
         addTool(buttonPanel, new EraserTool(), false);
         addTool(buttonPanel, new FillTool(), false);
+        addTool(buttonPanel, new TextTool(), false);
         addTool(buttonPanel, new EyedropperTool(), false);
         addTool(buttonPanel, new MagicWandTool(), false);
         addTool(buttonPanel, new LassoTool(), false);

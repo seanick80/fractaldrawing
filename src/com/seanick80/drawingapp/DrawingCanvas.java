@@ -124,6 +124,30 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         repaint();
     }
 
+    /** Zoom in centered on the canvas middle. */
+    public void zoomIn() {
+        applyViewZoom(getWidth() / 2, getHeight() / 2, 1.25);
+    }
+
+    /** Zoom out centered on the canvas middle. */
+    public void zoomOut() {
+        applyViewZoom(getWidth() / 2, getHeight() / 2, 0.8);
+    }
+
+    /** Zoom to fit the image within the current canvas size. */
+    public void zoomToFit() {
+        BufferedImage img = getImage();
+        if (img == null) return;
+        double scaleX = (double) getWidth() / img.getWidth();
+        double scaleY = (double) getHeight() / img.getHeight();
+        viewZoom = Math.min(scaleX, scaleY);
+        viewZoom = Math.max(0.25, Math.min(viewZoom, 32.0));
+        // Center the image
+        viewPanX = (getWidth() - img.getWidth() * viewZoom) / 2;
+        viewPanY = (getHeight() - img.getHeight() * viewZoom) / 2;
+        repaint();
+    }
+
     private void applyViewZoom(int screenX, int screenY, double factor) {
         double imgX = (screenX - viewPanX) / viewZoom;
         double imgY = (screenY - viewPanY) / viewZoom;

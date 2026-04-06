@@ -67,11 +67,9 @@ public class PaintbrushTool implements Tool {
             this.strokeSize = size;
         });
 
-        JPanel shapePanel = createComboPanel("Shape:", BrushShape.values(), brushShape,
-                val -> brushShape = (BrushShape) val);
+        JPanel shapePanel = createShapePanel();
 
-        JPanel texturePanel = createComboPanel("Texture:", BrushTexture.values(), brushTexture,
-                val -> brushTexture = (BrushTexture) val);
+        JPanel texturePanel = createTexturePanel();
 
         JPanel opacityPanel = createSliderPanel("Opacity", (int) (opacity * 100), value -> {
             opacity = value / 100.0f;
@@ -96,25 +94,136 @@ public class PaintbrushTool implements Tool {
         return panel;
     }
 
-    private <E> JPanel createComboPanel(String labelText, E[] values, E selected,
-                                         java.util.function.Consumer<E> onChange) {
+    private JPanel createShapePanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel label = new JLabel(labelText);
+        JLabel label = new JLabel("Shape:");
         label.setFont(label.getFont().deriveFont(Font.BOLD, 11f));
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JComboBox<E> combo = new JComboBox<>(values);
-        combo.setSelectedItem(selected);
-        combo.setMaximumSize(new Dimension(120, 28));
+        JComboBox<BrushShape> combo = new JComboBox<>(BrushShape.values());
+        combo.setSelectedItem(brushShape);
+        combo.setMaximumSize(new Dimension(140, 36));
         combo.setAlignmentX(Component.LEFT_ALIGNMENT);
-        combo.addActionListener(e -> {
-            @SuppressWarnings("unchecked")
-            E val = (E) combo.getSelectedItem();
-            onChange.accept(val);
+
+        combo.setRenderer(new ListCellRenderer<BrushShape>() {
+            @Override
+            public Component getListCellRendererComponent(JList<? extends BrushShape> list,
+                    BrushShape value, int index, boolean isSelected, boolean cellHasFocus) {
+                JPanel cell = new JPanel(new BorderLayout(4, 0));
+                cell.setBackground(isSelected ? list.getSelectionBackground() : list.getBackground());
+
+                JPanel icon = new JPanel() {
+                    @Override
+                    protected void paintComponent(Graphics g) {
+                        super.paintComponent(g);
+                        Graphics2D g2 = (Graphics2D) g;
+                        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                RenderingHints.VALUE_ANTIALIAS_ON);
+                        g2.setColor(Color.BLACK);
+                        int cx = getWidth() / 2, cy = getHeight() / 2, r = 10;
+                        switch (value) {
+                            case ROUND:
+                                g2.fillOval(cx - r, cy - r, r * 2, r * 2);
+                                break;
+                            case SQUARE:
+                                g2.fillRect(cx - r, cy - r, r * 2, r * 2);
+                                break;
+                            case DIAMOND:
+                                int[] xp = {cx, cx + r, cx, cx - r};
+                                int[] yp = {cy - r, cy, cy + r, cy};
+                                g2.fillPolygon(xp, yp, 4);
+                                break;
+                        }
+                    }
+                };
+                icon.setPreferredSize(new Dimension(28, 28));
+                icon.setOpaque(false);
+
+                JLabel nameLabel = new JLabel(value.name());
+                nameLabel.setFont(nameLabel.getFont().deriveFont(10f));
+                nameLabel.setForeground(isSelected ? list.getSelectionForeground() : list.getForeground());
+
+                cell.add(icon, BorderLayout.WEST);
+                cell.add(nameLabel, BorderLayout.CENTER);
+                return cell;
+            }
         });
+
+        combo.addActionListener(e -> brushShape = (BrushShape) combo.getSelectedItem());
+
+        panel.add(label);
+        panel.add(Box.createVerticalStrut(2));
+        panel.add(combo);
+        return panel;
+    }
+
+    private JPanel createTexturePanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel label = new JLabel("Texture:");
+        label.setFont(label.getFont().deriveFont(Font.BOLD, 11f));
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JComboBox<BrushTexture> combo = new JComboBox<>(BrushTexture.values());
+        combo.setSelectedItem(brushTexture);
+        combo.setMaximumSize(new Dimension(140, 40));
+        combo.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        combo.setRenderer(new ListCellRenderer<BrushTexture>() {
+            @Override
+            public Component getListCellRendererComponent(JList<? extends BrushTexture> list,
+                    BrushTexture value, int index, boolean isSelected, boolean cellHasFocus) {
+                JPanel cell = new JPanel(new BorderLayout(4, 0));
+                cell.setBackground(isSelected ? list.getSelectionBackground() : list.getBackground());
+
+                JPanel preview = new JPanel() {
+                    @Override
+                    protected void paintComponent(Graphics g) {
+                        super.paintComponent(g);
+                        BufferedImage img = new BufferedImage(
+                                getWidth(), getHeight(), BufferedImage.TYPE_INT_ARGB);
+                        Graphics2D g2 = img.createGraphics();
+                        g2.setColor(Color.WHITE);
+                        g2.fillRect(0, 0, getWidth(), getHeight());
+                        g2.dispose();
+
+                        BrushTexture savedTexture = brushTexture;
+                        BrushShape savedShape = brushShape;
+                        brushTexture = value;
+                        brushShape = BrushShape.ROUND;
+                        int previewSize = 8;
+                        int savedStroke = strokeSize;
+                        strokeSize = previewSize;
+                        int cy = getHeight() / 2;
+                        for (int x = previewSize; x < getWidth() - previewSize; x += previewSize / 2) {
+                            paintStamp(img, x, cy, Color.BLACK);
+                        }
+                        strokeSize = savedStroke;
+                        brushTexture = savedTexture;
+                        brushShape = savedShape;
+
+                        g.drawImage(img, 0, 0, null);
+                    }
+                };
+                preview.setPreferredSize(new Dimension(80, 24));
+                preview.setOpaque(false);
+
+                JLabel nameLabel = new JLabel(value.name());
+                nameLabel.setFont(nameLabel.getFont().deriveFont(9f));
+                nameLabel.setForeground(isSelected ? list.getSelectionForeground() : list.getForeground());
+
+                cell.add(preview, BorderLayout.CENTER);
+                cell.add(nameLabel, BorderLayout.SOUTH);
+                return cell;
+            }
+        });
+
+        combo.addActionListener(e -> brushTexture = (BrushTexture) combo.getSelectedItem());
 
         panel.add(label);
         panel.add(Box.createVerticalStrut(2));

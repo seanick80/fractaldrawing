@@ -281,6 +281,31 @@ public class DrawingApp extends JFrame {
         editMenu.addSeparator();
         editMenu.add(clearItem);
 
+        JMenu viewMenu = new JMenu("View");
+        viewMenu.setMnemonic('V');
+
+        JMenuItem zoomInItem = new JMenuItem("Zoom In");
+        zoomInItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, InputEvent.CTRL_DOWN_MASK));
+        zoomInItem.addActionListener(e -> canvas.zoomIn());
+
+        JMenuItem zoomOutItem = new JMenuItem("Zoom Out");
+        zoomOutItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK));
+        zoomOutItem.addActionListener(e -> canvas.zoomOut());
+
+        JMenuItem zoomFitItem = new JMenuItem("Zoom to Fit");
+        zoomFitItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK));
+        zoomFitItem.addActionListener(e -> canvas.zoomToFit());
+
+        JMenuItem zoomResetItem = new JMenuItem("Reset Zoom");
+        zoomResetItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK));
+        zoomResetItem.addActionListener(e -> canvas.resetViewZoom());
+
+        viewMenu.add(zoomInItem);
+        viewMenu.add(zoomOutItem);
+        viewMenu.addSeparator();
+        viewMenu.add(zoomFitItem);
+        viewMenu.add(zoomResetItem);
+
         JMenu toolbarsMenu = new JMenu("Toolbars");
         toolbarsMenu.setMnemonic('T');
         for (DockablePanel dp : dockablePanels) {
@@ -301,6 +326,7 @@ public class DrawingApp extends JFrame {
 
         menuBar.add(fileMenu);
         menuBar.add(editMenu);
+        menuBar.add(viewMenu);
         menuBar.add(toolbarsMenu);
         return menuBar;
     }

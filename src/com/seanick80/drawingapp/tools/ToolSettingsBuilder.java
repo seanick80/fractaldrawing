@@ -99,8 +99,42 @@ public class ToolSettingsBuilder {
 
         JComboBox<StrokeStyle> styleCombo = new JComboBox<>(StrokeStyle.values());
         styleCombo.setSelectedItem(defaultStyle);
-        styleCombo.setMaximumSize(new Dimension(120, 28));
+        styleCombo.setMaximumSize(new Dimension(140, 32));
         styleCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        styleCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value,
+                    int index, boolean isSelected, boolean cellHasFocus) {
+                JPanel cell = new JPanel(new BorderLayout(4, 0));
+                cell.setBackground(isSelected ? list.getSelectionBackground() : list.getBackground());
+                cell.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
+
+                StrokeStyle style = (StrokeStyle) value;
+                JPanel strokePreview = new JPanel() {
+                    @Override
+                    protected void paintComponent(Graphics g) {
+                        super.paintComponent(g);
+                        Graphics2D g2 = (Graphics2D) g;
+                        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                                RenderingHints.VALUE_ANTIALIAS_ON);
+                        g2.setStroke(style.createStroke(2));
+                        g2.setColor(isSelected ? list.getSelectionForeground() : Color.BLACK);
+                        g2.drawLine(2, getHeight() / 2, getWidth() - 2, getHeight() / 2);
+                    }
+                };
+                strokePreview.setPreferredSize(new Dimension(60, 16));
+                strokePreview.setOpaque(false);
+
+                JLabel label = new JLabel(style.toString());
+                label.setFont(label.getFont().deriveFont(9f));
+                label.setForeground(isSelected ? list.getSelectionForeground() : list.getForeground());
+
+                cell.add(strokePreview, BorderLayout.WEST);
+                cell.add(label, BorderLayout.CENTER);
+                return cell;
+            }
+        });
 
         JPanel preview = new JPanel() {
             @Override
@@ -170,8 +204,44 @@ public class ToolSettingsBuilder {
         for (FillProvider fp : fillRegistry.getAll()) {
             fillCombo.addItem(fp.getName());
         }
-        fillCombo.setMaximumSize(new Dimension(120, 28));
+        fillCombo.setMaximumSize(new Dimension(140, 32));
         fillCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        fillCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value,
+                    int index, boolean isSelected, boolean cellHasFocus) {
+                String name = (String) value;
+                JPanel cell = new JPanel(new BorderLayout(4, 0));
+                cell.setBackground(isSelected ? list.getSelectionBackground() : list.getBackground());
+                cell.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
+
+                if (!NONE_ENTRY.equals(name)) {
+                    FillProvider fp = fillRegistry.getByName(name);
+                    if (fp != null) {
+                        JPanel preview = new JPanel() {
+                            @Override
+                            protected void paintComponent(Graphics g) {
+                                super.paintComponent(g);
+                                Graphics2D g2 = (Graphics2D) g;
+                                g2.setPaint(fp.createPaint(Color.BLACK, 0, 0, getWidth(), getHeight()));
+                                g2.fillRect(0, 0, getWidth(), getHeight());
+                            }
+                        };
+                        preview.setPreferredSize(new Dimension(24, 18));
+                        preview.setBorder(BorderFactory.createLineBorder(Color.GRAY));
+                        cell.add(preview, BorderLayout.WEST);
+                    }
+                }
+
+                JLabel label = new JLabel(name);
+                label.setFont(label.getFont().deriveFont(10f));
+                label.setForeground(isSelected ? list.getSelectionForeground() : list.getForeground());
+                cell.add(label, BorderLayout.CENTER);
+
+                return cell;
+            }
+        });
 
         // Initialize combo to match the tool's current fill state
         if (currentFill != null) {
