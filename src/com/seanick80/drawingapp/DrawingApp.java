@@ -44,6 +44,11 @@ public class DrawingApp extends JFrame {
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
             public void windowClosing(java.awt.event.WindowEvent e) {
+                if (!canvas.isDirty()) {
+                    dispose();
+                    System.exit(0);
+                    return;
+                }
                 int choice = JOptionPane.showConfirmDialog(
                     DrawingApp.this,
                     "Save before closing?",
@@ -504,14 +509,16 @@ public class DrawingApp extends JFrame {
     }
 
     private void newImage() {
-        int choice = JOptionPane.showConfirmDialog(this,
-                "Save current file before creating a new image?",
-                "Save Changes",
-                JOptionPane.YES_NO_CANCEL_OPTION);
-        if (choice == JOptionPane.YES_OPTION) {
-            saveFile();
-        } else if (choice == JOptionPane.CANCEL_OPTION) {
-            return;
+        if (canvas.isDirty()) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "Save current file before creating a new image?",
+                    "Save Changes",
+                    JOptionPane.YES_NO_CANCEL_OPTION);
+            if (choice == JOptionPane.YES_OPTION) {
+                saveFile();
+            } else if (choice == JOptionPane.CANCEL_OPTION) {
+                return;
+            }
         }
         String input = JOptionPane.showInputDialog(this, "Enter size (WxH):", "800x600");
         if (input == null) return;
@@ -519,8 +526,8 @@ public class DrawingApp extends JFrame {
         try {
             int w = Integer.parseInt(parts[0].trim());
             int h = Integer.parseInt(parts[1].trim());
-            canvas.newImage(w, h);
             toolBar.resetAllTools();
+            canvas.newImage(w, h);
             currentFile = null;
             updateTitle();
         } catch (Exception ex) {
@@ -529,14 +536,16 @@ public class DrawingApp extends JFrame {
     }
 
     private void openImage() {
-        int choice = JOptionPane.showConfirmDialog(this,
-                "Save current file before opening?",
-                "Save Changes",
-                JOptionPane.YES_NO_CANCEL_OPTION);
-        if (choice == JOptionPane.YES_OPTION) {
-            saveFile();
-        } else if (choice == JOptionPane.CANCEL_OPTION) {
-            return;
+        if (canvas.isDirty()) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "Save current file before opening?",
+                    "Save Changes",
+                    JOptionPane.YES_NO_CANCEL_OPTION);
+            if (choice == JOptionPane.YES_OPTION) {
+                saveFile();
+            } else if (choice == JOptionPane.CANCEL_OPTION) {
+                return;
+            }
         }
         JFileChooser chooser = new JFileChooser();
         chooser.addChoosableFileFilter(new FileNameExtensionFilter("FDP Project (*.fdp)", "fdp"));
@@ -546,6 +555,7 @@ public class DrawingApp extends JFrame {
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             File file = chooser.getSelectedFile();
             try {
+                toolBar.resetAllTools();
                 if (file.getName().toLowerCase().endsWith(".fdp")) {
                     loadFdpProject(file);
                 } else {
@@ -554,7 +564,6 @@ public class DrawingApp extends JFrame {
                         canvas.loadImage(img);
                     }
                 }
-                toolBar.resetAllTools();
                 currentFile = file;
                 updateTitle();
             } catch (Exception ex) {
@@ -580,6 +589,7 @@ public class DrawingApp extends JFrame {
                 BufferedImage flat = canvas.getLayerManager().composite();
                 ImageIO.write(flat, format, currentFile);
             }
+            canvas.markClean();
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Failed to save: " + ex.getMessage());
         }
@@ -612,6 +622,7 @@ public class DrawingApp extends JFrame {
                 }
                 currentFile = file;
                 updateTitle();
+                canvas.markClean();
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Failed to save: " + ex.getMessage());
             }

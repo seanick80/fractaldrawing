@@ -44,6 +44,9 @@ public class SelectionTool implements Tool {
     @Override
     public boolean needsPersistentPreview() { return true; }
 
+    @Override
+    public boolean allowOutOfBoundsInput() { return true; }
+
     // -------------------------------------------------------------------------
     // Lifecycle
     // -------------------------------------------------------------------------

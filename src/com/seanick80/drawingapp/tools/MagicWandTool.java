@@ -35,6 +35,9 @@ public class MagicWandTool implements Tool {
     public boolean needsPersistentPreview() { return true; }
 
     @Override
+    public boolean allowOutOfBoundsInput() { return true; }
+
+    @Override
     public void onActivated(BufferedImage image, DrawingCanvas canvas) {
         activeCanvas = canvas;
         antTimer = new Timer(100, e -> {
@@ -56,9 +59,7 @@ public class MagicWandTool implements Tool {
 
     @Override
     public void mousePressed(BufferedImage image, int x, int y, DrawingCanvas canvas) {
-        if (x < 0 || x >= image.getWidth() || y < 0 || y >= image.getHeight()) return;
-
-        // Click inside existing selection → start moving
+        // Click inside existing selection → start moving (even if off-canvas)
         if (hasSelection() && isInsideSelection(x, y)) {
             if (floatingContent == null) {
                 floatingContent = copySelection(image);
@@ -72,6 +73,9 @@ public class MagicWandTool implements Tool {
 
         // Click outside → commit any floating content, then make new selection
         commitFloating(image);
+
+        // New selection requires in-bounds click
+        if (x < 0 || x >= image.getWidth() || y < 0 || y >= image.getHeight()) return;
 
         int targetColor = image.getRGB(x, y);
         int w = image.getWidth();

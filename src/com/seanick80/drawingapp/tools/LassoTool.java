@@ -35,6 +35,9 @@ public class LassoTool implements Tool {
     public boolean needsPersistentPreview() { return true; }
 
     @Override
+    public boolean allowOutOfBoundsInput() { return true; }
+
+    @Override
     public void onActivated(BufferedImage image, DrawingCanvas canvas) {
         activeCanvas = canvas;
         antTimer = new Timer(100, e -> {

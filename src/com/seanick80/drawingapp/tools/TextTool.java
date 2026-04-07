@@ -67,11 +67,16 @@ public class TextTool implements Tool {
     @Override
     public void onDeactivated() {
         if (activeCanvas != null) {
+            BufferedImage layerImg = activeCanvas.getActiveLayerImage();
             if (floatingText != null) {
-                commitFloatingToLayer(activeCanvas.getActiveLayerImage());
+                commitFloatingToLayer(layerImg);
             }
             if (textArea != null) {
                 commitText(activeCanvas);
+                // commitText creates floatingText — commit it to the layer now
+                if (floatingText != null) {
+                    commitFloatingToLayer(layerImg);
+                }
             }
         }
         // Always clear transient state regardless of activeCanvas
@@ -127,8 +132,11 @@ public class TextTool implements Tool {
                 editDragStartY = y;
                 return;
             } else {
-                // Click far outside - commit text and start fresh below
+                // Click far outside - commit text to layer and start fresh below
                 commitText(canvas);
+                if (floatingText != null) {
+                    commitFloatingToLayer(image);
+                }
             }
         }
 
@@ -220,17 +228,12 @@ public class TextTool implements Tool {
             g.drawRect(rx, ry, rw, rh);
         }
 
-        // Show live text while editing (multiline)
-        if (editing && !currentText.isEmpty()) {
-            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            g.setFont(currentFont);
-            g.setColor(textColor); // Issue #12: use actual text color
-            FontMetrics fm = g.getFontMetrics();
-            String[] lines = currentText.split("\n", -1);
-            int lineY = textY;
-            for (String line : lines) {
-                g.drawString(line, textX, lineY);
-                lineY += fm.getHeight();
+        // Live color update: sync textColor with canvas foreground while editing
+        if (editing && activeCanvas != null && textArea != null) {
+            Color fg = activeCanvas.getForegroundColor();
+            if (!fg.equals(textColor)) {
+                textColor = fg;
+                textArea.setForeground(textColor);
             }
         }
 

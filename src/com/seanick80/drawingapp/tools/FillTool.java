@@ -97,14 +97,16 @@ public class FillTool implements Tool {
 
     private void applyFill(BufferedImage image, int x, int y, DrawingCanvas canvas) {
         if (x < 0 || x >= image.getWidth() || y < 0 || y >= image.getHeight()) return;
-        int targetColor = image.getRGB(x, y);
+        // Read from composite so fill sees all layers (works on empty layers)
+        BufferedImage composite = canvas.getCompositeImage();
+        int targetColor = composite.getRGB(x, y);
         Color fgColor = canvas.getForegroundColor();
         if (targetColor == fgColor.getRGB() && fillProvider == null) return;
 
         int w = image.getWidth();
         int h = image.getHeight();
-        boolean[][] mask = floodFillMask(image, x, y, targetColor, w, h);
-        expandMaskForAliasing(image, mask, targetColor, w, h);
+        boolean[][] mask = floodFillMask(composite, x, y, targetColor, w, h);
+        expandMaskForAliasing(composite, mask, targetColor, w, h);
 
         // Find bounding box of the filled region
         int minX = w, minY = h, maxX = 0, maxY = 0;

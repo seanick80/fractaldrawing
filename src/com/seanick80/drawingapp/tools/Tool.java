@@ -57,6 +57,9 @@ public interface Tool {
     /** Whether this tool needs its preview drawn even when not actively drawing. */
     default boolean needsPersistentPreview() { return false; }
 
+    /** Return true if this tool should receive mouse events even when clicking outside image bounds. */
+    default boolean allowOutOfBoundsInput() { return false; }
+
     /**
      * Returns a callback to invoke when the gradient changes, or null if this tool
      * doesn't respond to gradient changes. Used to wire the gradient toolbar.

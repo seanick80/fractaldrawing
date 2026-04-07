@@ -17,6 +17,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
     private ColorPicker colorPicker;
     private final UndoManager undoManager;
     private boolean drawing;
+    private boolean dirty;
     private int lastMouseButton;
     private int panOffsetX, panOffsetY;
 
@@ -51,6 +52,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         revalidate();
         repaint();
         undoManager.clear();
+        dirty = false;
     }
 
     public void loadImage(BufferedImage img) {
@@ -64,6 +66,7 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         revalidate();
         repaint();
         undoManager.clear();
+        dirty = false;
     }
 
     public void clearCanvas() {
@@ -108,6 +111,16 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
 
     public void saveUndoState() {
         undoManager.saveState(layerManager);
+        dirty = true;
+    }
+
+    public boolean isDirty() { return dirty; }
+
+    public void markClean() { dirty = false; }
+
+    /** Returns a fresh composite of all layers (what the user sees). */
+    public BufferedImage getCompositeImage() {
+        return layerManager.composite();
     }
 
     public void setPanOffset(int dx, int dy) {
@@ -204,8 +217,9 @@ public class DrawingCanvas extends JPanel implements MouseListener, MouseMotionL
         int imgX = toImageX(e.getX());
         int imgY = toImageY(e.getY());
         BufferedImage layerImg = getActiveLayerImage();
-        if (activeTool != null && imgX >= 0 && imgX < layerImg.getWidth()
-                && imgY >= 0 && imgY < layerImg.getHeight()) {
+        boolean inBounds = imgX >= 0 && imgX < layerImg.getWidth()
+                && imgY >= 0 && imgY < layerImg.getHeight();
+        if (activeTool != null && (inBounds || activeTool.allowOutOfBoundsInput())) {
             if (layerManager.getActiveLayer().isLocked()) return;
             if (!layerManager.getActiveLayer().isVisible()) {
                 javax.swing.JOptionPane.showMessageDialog(this,
