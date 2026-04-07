@@ -77,10 +77,12 @@ public class MagicWandTool implements Tool {
         // New selection requires in-bounds click
         if (x < 0 || x >= image.getWidth() || y < 0 || y >= image.getHeight()) return;
 
-        int targetColor = image.getRGB(x, y);
+        // Read from composite so selection works on empty layers
+        BufferedImage composite = (canvas != null) ? canvas.getCompositeImage() : image;
+        int targetColor = composite.getRGB(x, y);
         int w = image.getWidth();
         int h = image.getHeight();
-        selectionMask = floodFillMask(image, x, y, targetColor, w, h);
+        selectionMask = floodFillMask(composite, x, y, targetColor, w, h);
         maskW = w;
         maskH = h;
         selectionOutline = buildOutline(selectionMask, w, h);

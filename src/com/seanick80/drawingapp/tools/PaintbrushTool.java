@@ -20,6 +20,8 @@ public class PaintbrushTool implements Tool {
     private BrushShape brushShape = BrushShape.ROUND;
     private BrushTexture brushTexture = BrushTexture.SMOOTH;
     private JPanel brushPreview;
+    private DrawingCanvas activeCanvas;
+    private java.beans.PropertyChangeListener colorListener;
 
     @Override
     public String getName() { return "Brush"; }
@@ -35,6 +37,26 @@ public class PaintbrushTool implements Tool {
 
     @Override
     public boolean needsPersistentPreview() { return true; }
+
+    @Override
+    public void onActivated(BufferedImage image, DrawingCanvas canvas) {
+        activeCanvas = canvas;
+        if (canvas.getColorPicker() != null) {
+            colorListener = evt -> {
+                if (brushPreview != null) brushPreview.repaint();
+            };
+            canvas.getColorPicker().addColorPropertyChangeListener(colorListener);
+        }
+    }
+
+    @Override
+    public void onDeactivated() {
+        if (activeCanvas != null && activeCanvas.getColorPicker() != null && colorListener != null) {
+            activeCanvas.getColorPicker().removeColorPropertyChangeListener(colorListener);
+        }
+        colorListener = null;
+        activeCanvas = null;
+    }
 
     @Override
     public void mouseMoved(BufferedImage image, int x, int y, DrawingCanvas canvas) {
@@ -108,13 +130,15 @@ public class PaintbrushTool implements Tool {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
+                // Read live color from canvas so preview updates on color picker change
+                Color color = (activeCanvas != null) ? activeCanvas.getForegroundColor() : previewColor;
                 BufferedImage img = new BufferedImage(
                         getWidth(), getHeight(), BufferedImage.TYPE_INT_ARGB);
                 Graphics2D g2 = img.createGraphics();
                 g2.setColor(Color.WHITE);
                 g2.fillRect(0, 0, getWidth(), getHeight());
                 g2.dispose();
-                paintStamp(img, getWidth() / 2, getHeight() / 2, previewColor);
+                paintStamp(img, getWidth() / 2, getHeight() / 2, color);
                 g.drawImage(img, 0, 0, null);
             }
         };

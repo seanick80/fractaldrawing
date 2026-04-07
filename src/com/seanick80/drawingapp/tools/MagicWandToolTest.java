@@ -11,7 +11,8 @@ class MagicWandToolTest {
 
     @Test @MediumTest
     void magicWandSelectsSameColor() {
-        BufferedImage img = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+        DrawingCanvas canvas = TestHelpers.testCanvas(100, 100);
+        BufferedImage img = canvas.getActiveLayerImage();
         Graphics2D g = img.createGraphics();
         g.setColor(Color.RED);
         g.fillRect(0, 0, 50, 100);
@@ -19,7 +20,6 @@ class MagicWandToolTest {
         g.fillRect(50, 0, 50, 100);
         g.dispose();
 
-        DrawingCanvas canvas = TestHelpers.testCanvas(100, 100);
         MagicWandTool wand = new MagicWandTool();
         wand.mousePressed(img, 25, 50, canvas);
 
